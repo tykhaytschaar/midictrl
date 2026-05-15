@@ -18,3 +18,10 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+
+# ESP-IDF
+build/
+sdkconfig
+sdkconfig.old
+managed_components/
+dependencies.lock
