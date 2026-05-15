@@ -10,54 +10,65 @@ Target device: Neural DSP **Nano Cortex**, controlled via MIDI from a footswitch
 
 | Component | Notes |
 |-----------|-------|
-| Raspberry Pi Pico W | Main MCU with built-in WiFi |
+| ESP32-S3 module (e.g. ESP32-S3-WROOM-1 N16R8, on a DevKitC-1 board) | Main MCU with built-in WiFi/BLE, dual Xtensa core, 16 MB flash, 8 MB Octal PSRAM |
 | 3.5" IPS TFT, ST7796, SPI, 480x320, no-touch | Main display |
 | Rotary encoder (Bourns PEC11R or similar, integrated push button) | For on-device configuration |
 | 8x SPST momentary footswitches | 2 bank + 5 program + 1 tap tempo |
-| WS2812B / SK6812 LED chain (at least 5, optionally +2-3 status LEDs) | Program slot colors and status |
-| Expression pedal input (TRS jack, typically 10k–25k log/lin pot) | Wired to ADC |
+| WS2812B / SK6812 LED chain (at least 5, optionally +2-3 status LEDs) | Program slot colors and status. Driven via RMT peripheral |
+| Expression pedal input (TRS jack, typically 10k–25k log/lin pot) | Wired to an ADC1 channel (ADC2 cannot be used while WiFi is active) |
 | MIDI TRS Type A output (instead of 5-pin DIN) | Feeds the Nano Cortex input |
-| 9V DC power supply (from pedalboard PSU) | Buck converter to 5V for the Pico VBUS |
+| 9V DC power supply (from pedalboard PSU) | Buck converter to 5V for USB or 3.3V LDO for the module's 3V3 rail |
 
-### 1.2 Suggested GPIO pinout (Pico W)
+### 1.2 Suggested GPIO pinout (ESP32-S3)
+
+The pinout below assumes an ESP32-S3-WROOM-1 N16R8 module. Pins 26–32 are used by the internal SPI flash, and 33–37 by the Octal PSRAM, so they are not available. Pins 0, 3, 45, 46 are strapping pins and must be avoided for footswitches or anything that could be held in an unexpected state at boot. Pins 19/20 are reserved for native USB (USB-OTG D-/D+). ADC2 cannot be used while WiFi is active, so the expression pedal must use ADC1 (GPIO 1–10).
 
 | GPIO | Function |
 |------|----------|
-| GP0 / GP1 | USB serial debug (reserved) |
-| GP2 | Footswitch: Bank Down |
-| GP3 | Footswitch: Bank Up |
-| GP4 | UART1 TX → MIDI out (via 220Ω to TRS tip) |
-| GP5 | Footswitch: Program 1 |
-| GP6 | Encoder A |
-| GP7 | Encoder B |
-| GP8 | Encoder button |
-| GP9 | WS2812 data |
-| GP10 | Footswitch: Program 2 |
-| GP11 | Footswitch: Program 3 |
-| GP12 | Footswitch: Program 4 |
-| GP13 | Footswitch: Program 5 |
-| GP14 | Footswitch: Tap Tempo |
-| GP15 | spare |
-| GP16 | SPI0 MISO (TFT, optional) |
-| GP17 | SPI0 CS (TFT) |
-| GP18 | SPI0 SCK (TFT) |
-| GP19 | SPI0 MOSI (TFT) |
-| GP20 | TFT DC |
-| GP21 | TFT RST |
-| GP22 | TFT backlight (PWM) |
-| GP26 | ADC0 → Expression pedal wiper |
-| GP27 / GP28 | spare (additional ADC) |
+| GPIO0 | Boot strap (reserved, do not use) |
+| GPIO1 | ADC1_CH0 → Expression pedal wiper |
+| GPIO2 | spare (ADC1_CH1) |
+| GPIO3 | strap (reserved) |
+| GPIO4 | Footswitch: Bank Down |
+| GPIO5 | Footswitch: Bank Up |
+| GPIO6 | Footswitch: Program 1 |
+| GPIO7 | Footswitch: Program 2 |
+| GPIO8 | Footswitch: Program 3 |
+| GPIO9 | Footswitch: Program 4 |
+| GPIO10 | Footswitch: Program 5 |
+| GPIO11 | Footswitch: Tap Tempo |
+| GPIO12 | Encoder A |
+| GPIO13 | Encoder B |
+| GPIO14 | Encoder button |
+| GPIO15 | WS2812 data (RMT TX channel) |
+| GPIO16 | UART1 TX → MIDI out (via 220Ω to TRS tip) |
+| GPIO17 | TFT DC |
+| GPIO18 | TFT RST |
+| GPIO19 | USB-OTG D- (reserved) |
+| GPIO20 | USB-OTG D+ (reserved) |
+| GPIO21 | TFT backlight (LEDC PWM) |
+| GPIO26–32 | Reserved (internal SPI flash on the module) |
+| GPIO33–37 | Reserved (Octal PSRAM on the -R8 variant) |
+| GPIO38 | SPI2_HOST MOSI (TFT) |
+| GPIO39 | SPI2_HOST SCK (TFT) |
+| GPIO40 | SPI2_HOST CS (TFT) |
+| GPIO41 | spare |
+| GPIO42 | spare |
+| GPIO43 | UART0 TX (USB-Serial console, reserved) |
+| GPIO44 | UART0 RX (USB-Serial console, reserved) |
+| GPIO45 | strap (reserved) |
+| GPIO46 | strap (reserved) |
 
-GP23, GP24, GP25, GP29 are reserved for the Pico W's internal WiFi/LED.
+SPI2_HOST (formerly "HSPI") is used for the TFT; SPI3_HOST is left free. MISO is unused since the ST7796 is write-only in this design. All footswitches and the encoder are wired with the internal pull-up enabled and active low (GPIO → switch → GND).
 
 ### 1.3 MIDI output circuit
 
 TRS Type A schematic (Nano Cortex input compatible):
-- Tip → 220Ω → UART1 TX (GP4)
-- Ring → 220Ω → 3.3V (or 5V VBUS if a more solid signal level is needed)
+- Tip → 220Ω → UART1 TX (GPIO16)
+- Ring → 220Ω → 3.3V
 - Sleeve → GND
 
-Note: the Nano Cortex TRS MIDI input is Type A standard (tip = current source). If the 3.3V signal isn't stable enough, a 74HCT04 inverter from 5V can level-shift it.
+Note: the Nano Cortex TRS MIDI input is Type A standard (tip = current source). The ESP32-S3 GPIO drive is 3.3V, which is within the MIDI 1.0 voltage tolerance. If the signal level proves marginal in practice, a 74HCT04 inverter buffer on 5V can level-shift it.
 
 ---
 
@@ -146,7 +157,7 @@ Both messages are **global** settings, not mode/bank-level.
 
 ### 2.8 Expression pedal
 
-- Analog signal read from ADC0, 12-bit.
+- Analog signal read from ADC1_CH0, 12-bit (via the ESP-IDF `esp_adc` continuous or oneshot driver).
 - Calibration: ADC values for heel/toe position (`adc_min`, `adc_max`) are stored. "Calibration" workflow on the web UI: press to heel → enter, press to toe → enter.
 - Curve: `linear`, `log`, or `exp`. ADC range mapped to MIDI 0–127 along the curve.
 - Smoothing: EMA filter, `smoothing` parameter (0–1, default 0.2). Output sends a new CC only when the computed MIDI value (0–127) has changed, at max ~100 Hz frequency.
@@ -328,10 +339,12 @@ banks:
 ## 7. Persistence and Boot Behavior
 
 ### 7.1 Stored data
-- Full configuration (see schema) → flash, JSON format.
-- Last current bank / program index → flash (small separate file or preferences blob), only if `boot_resume = true`.
-- WiFi credentials → flash.
-- Expression calibration → part of the `global.expression` block.
+- Full configuration (see schema) → LittleFS partition (`storage`), JSON format. (LittleFS is added via the IDF Component Manager — `joltwallet/littlefs`.)
+- Last current bank / program index → NVS (`esp_nvs`) under the `state` namespace, only if `boot_resume = true`.
+- WiFi credentials → NVS under the `wifi` namespace.
+- Expression calibration → part of the `global.expression` block (lives in the LittleFS JSON, not NVS).
+
+The partition table (`partitions.csv`) reserves `nvs` (24 K) for preferences, `phy_init` (4 K), an app partition (~4 MB), and a `storage` partition for LittleFS (filling the rest of the flash).
 
 ### 7.2 Non-persistent (RAM only)
 - ALT_B cache (slot-level alt states).
@@ -339,15 +352,16 @@ banks:
 - Tap tempo BPM.
 
 ### 7.3 Boot sequence
-1. Load configuration from flash. If missing or corrupt, generate default config (1 empty bank, 5 empty slots).
-2. Initialize display, splash screen.
-3. WiFi init (non-blocking): if a saved SSID exists, start connection in the background.
-4. If there's no SSID, or the connection doesn't succeed within N seconds, start AP mode with a captive portal.
-5. mDNS / Bonjour registration (e.g. `midifoot.local`).
-6. Start the web server.
-7. Load current bank/program: if `boot_resume`, the last state; otherwise `bank 0 / slot 0`. **Every slot starts in primary.**
-8. Send the selected slot's MIDI messages (initial state sync with the Nano Cortex).
-9. Show the main view.
+1. Initialize NVS (`nvs_flash_init`). On `ESP_ERR_NVS_NO_FREE_PAGES` / version mismatch, erase and re-init.
+2. Mount the LittleFS `storage` partition. Load configuration JSON; if missing or corrupt, generate default config (1 empty bank, 5 empty slots) and write it back.
+3. Initialize display, splash screen.
+4. WiFi init via `esp_event` + `esp_netif`: if a saved SSID exists in NVS, start STA connection in the background (non-blocking).
+5. If there's no SSID, or the STA connection doesn't succeed within N seconds, start AP mode with a captive portal.
+6. mDNS registration (`mdns_init`, e.g. `midifoot.local`).
+7. Start the web server (`esp_http_server`).
+8. Load current bank/program: if `boot_resume`, the last state from NVS; otherwise `bank 0 / slot 0`. **Every slot starts in primary.**
+9. Send the selected slot's MIDI messages (initial state sync with the Nano Cortex).
+10. Show the main view.
 
 ---
 
@@ -377,24 +391,24 @@ banks:
 
 | Module | Responsibility |
 |--------|----------------|
-| `InputManager` | Footswitch debounce, encoder read, long press detection, event push to event queue |
+| `InputManager` | Footswitch debounce, encoder read, long press detection, event push to a FreeRTOS queue |
 | `StateMachine` | Current/target bank/program, browse mode, alt cache, tuner state. Only stores state and transitions |
-| `MidiOut` | Send MIDI messages over UART, channel handling, throttling |
-| `ExpressionPedal` | ADC read, smoothing, curving, MIDI send trigger |
-| `DisplayDriver` | Low-level TFT driver (SPI, DMA where possible) |
-| `UiRenderer` | High-level UI (main view, menu), reading state from StateMachine |
+| `MidiOut` | Send MIDI messages over UART1 (`uart_driver`), channel handling, throttling |
+| `ExpressionPedal` | ADC1 read (`esp_adc`), smoothing, curving, MIDI send trigger |
+| `DisplayDriver` | Low-level TFT driver over SPI2_HOST (`esp_lcd_panel_st7796` / `esp_lcd_panel_io_spi`), with DMA |
+| `UiRenderer` | High-level UI (main view, menu), reading state from StateMachine. Optionally LVGL on top of the ESP-LCD panel handle |
 | `MenuController` | Encoder menu logic, editors |
-| `ConfigStore` | Flash persistence, JSON serialization/parsing, defaults |
-| `WifiManager` | STA/AP mode handling, captive portal, mDNS |
-| `WebServer` | HTTP endpoints, websocket (live status), static assets |
-| `LedDriver` | WS2812 chain update (PIO-driven), animation state (blink, fade) |
+| `ConfigStore` | NVS (preferences, last state, WiFi creds) + LittleFS (JSON config blob), serialization/parsing, defaults |
+| `WifiManager` | STA/AP mode handling (`esp_wifi` + `esp_netif`), captive portal, `mdns` |
+| `WebServer` | `esp_http_server` endpoints, websocket (live status), static assets (embedded via `EMBED_FILES`) |
+| `LedDriver` | WS2812 chain update via the RMT peripheral (`led_strip` component), animation state (blink, fade) |
 
 `StateMachine` should be the single source of truth. `InputManager` sends events to it, `UiRenderer` and `LedDriver` read from it. `MidiOut` is triggered by `StateMachine` on state changes.
 
-### Main loop principle
-- Non-blocking, cooperative multitasking. No task should "freeze" for more than a few ms.
-- Time-critical: input debounce and MIDI out latency. These should be the most frequently polled.
-- Web server and display refresh are lower priority.
+### Task / loop principle
+- FreeRTOS tasks per module, communicating through queues and event groups. No task should block for more than a few ms outside of explicit waits.
+- Time-critical: input debounce and MIDI out latency. These run on the higher-priority tasks and may be pinned to the PRO_CPU (core 0).
+- Web server, mDNS, display refresh are lower priority and may be pinned to the APP_CPU (core 1) to keep them out of the input/MIDI hot path.
 
 ---
 
@@ -405,7 +419,7 @@ banks:
 - **Tuner display**: do we get feedback from the Nano Cortex via SysEx? If not, just an ON/OFF indicator.
 - **Power management**: with a pedalboard PSU present, no sleep mode. Battery operation is not a goal right now.
 - **OTA firmware update**: possible in the longer term, not MVP.
-- **More expression inputs**: ADC1, ADC2 are free – if two pedals are ever needed, easy to extend.
+- **More expression inputs**: more ADC1 channels are free on GPIO 2–10 – if two pedals are ever needed, easy to extend. (ADC2 is not an option while WiFi is active.)
 - **Long press on program footswitches**: not defined for now, but the logical framework allows future extension (e.g. slot scroll, function override).
 
 ---
