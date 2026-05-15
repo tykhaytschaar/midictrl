@@ -1,0 +1,20 @@
+{
+  "files.associations": {
+    "*.h": "c",
+    "*.c": "c"
+  },
+  "C_Cpp.default.cStandard": "c11",
+  "C_Cpp.default.intelliSenseMode": "linux-gcc-x86",
+  "files.exclude": {
+    "build/": true,
+    "managed_components/": true,
+    "**/.DS_Store": true
+  },
+  "search.exclude": {
+    "build/": true,
+    "managed_components/": true
+  },
+  "editor.tabSize": 4,
+  "editor.insertSpaces": true,
+  "editor.detectIndentation": false
+}

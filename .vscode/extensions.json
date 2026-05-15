@@ -1,0 +1,8 @@
+{
+  "recommendations": [
+    "ms-vscode.cpptools",
+    "espressif.esp-idf-extension",
+    "ms-azuretools.vscode-docker",
+    "eamodio.gitlens"
+  ]
+}

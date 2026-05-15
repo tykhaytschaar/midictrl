@@ -1,0 +1,53 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build (container)",
+      "type": "shell",
+      "command": ". $IDF_PATH/export.sh && idf.py build",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$gcc"],
+      "detail": "Run inside the dev container."
+    },
+    {
+      "label": "Reconfigure (container)",
+      "type": "shell",
+      "command": ". $IDF_PATH/export.sh && idf.py reconfigure",
+      "problemMatcher": []
+    },
+    {
+      "label": "Clean (container)",
+      "type": "shell",
+      "command": ". $IDF_PATH/export.sh && idf.py fullclean",
+      "problemMatcher": []
+    },
+    {
+      "label": "Size (container)",
+      "type": "shell",
+      "command": ". $IDF_PATH/export.sh && idf.py size-components",
+      "problemMatcher": []
+    },
+    {
+      "label": "Flash (host)",
+      "type": "shell",
+      "command": "tools/.venv/bin/esptool --chip esp32s3 --port ${input:serialPort} --baud 460800 write_flash --flash_mode dio --flash_freq 80m --flash_size 16MB 0x0 build/bootloader/bootloader.bin 0x8000 build/partition_table/partition-table.bin 0x10000 build/midictrl.bin",
+      "problemMatcher": [],
+      "detail": "Run on the macOS host (esptool from tools/.venv)."
+    },
+    {
+      "label": "Monitor (host)",
+      "type": "shell",
+      "command": "tools/.venv/bin/pyserial-miniterm ${input:serialPort} 115200",
+      "problemMatcher": [],
+      "detail": "Quit with Ctrl-] then Enter."
+    }
+  ],
+  "inputs": [
+    {
+      "id": "serialPort",
+      "type": "promptString",
+      "description": "Serial device (e.g. /dev/cu.usbserial-XXXX)",
+      "default": "/dev/cu.usbserial-0001"
+    }
+  ]
+}
