@@ -2,18 +2,27 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Build (container)",
+      "label": "Build esp32 (container)",
       "type": "shell",
-      "command": ". $IDF_PATH/export.sh && idf.py build",
+      "command": ". $IDF_PATH/export.sh && idf.py set-target esp32 && idf.py build",
       "group": { "kind": "build", "isDefault": true },
       "problemMatcher": ["$gcc"],
-      "detail": "Run inside the dev container."
+      "detail": "ESP32 WROOM-32 (MVP target). Run inside the dev container."
+    },
+    {
+      "label": "Build esp32s3 (container)",
+      "type": "shell",
+      "command": ". $IDF_PATH/export.sh && idf.py set-target esp32s3 && idf.py build",
+      "group": "build",
+      "problemMatcher": ["$gcc"],
+      "detail": "ESP32-S3 WROOM-1 N16R8 (full-feature target). Run inside the dev container."
     },
     {
       "label": "Reconfigure (container)",
       "type": "shell",
       "command": ". $IDF_PATH/export.sh && idf.py reconfigure",
-      "problemMatcher": []
+      "problemMatcher": [],
+      "detail": "Regenerate sdkconfig from defaults for the currently set target."
     },
     {
       "label": "Clean (container)",
@@ -28,11 +37,18 @@
       "problemMatcher": []
     },
     {
-      "label": "Flash (host)",
+      "label": "Flash esp32 (host)",
+      "type": "shell",
+      "command": "tools/.venv/bin/esptool --chip esp32 --port ${input:serialPort} --baud 460800 write_flash --flash_mode dio --flash_freq 40m --flash_size 4MB 0x1000 build/bootloader/bootloader.bin 0x8000 build/partition_table/partition-table.bin 0x10000 build/midictrl.bin",
+      "problemMatcher": [],
+      "detail": "ESP32 WROOM. Bootloader at 0x1000 (classic ESP32). Run on the macOS host."
+    },
+    {
+      "label": "Flash esp32s3 (host)",
       "type": "shell",
       "command": "tools/.venv/bin/esptool --chip esp32s3 --port ${input:serialPort} --baud 460800 write_flash --flash_mode dio --flash_freq 80m --flash_size 16MB 0x0 build/bootloader/bootloader.bin 0x8000 build/partition_table/partition-table.bin 0x10000 build/midictrl.bin",
       "problemMatcher": [],
-      "detail": "Run on the macOS host (esptool from tools/.venv)."
+      "detail": "ESP32-S3. Bootloader at 0x0. Run on the macOS host."
     },
     {
       "label": "Monitor (host)",

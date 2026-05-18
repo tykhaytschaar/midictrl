@@ -1,0 +1,3 @@
+# ESP32-S3 (-WROOM-1 N16R8) target — full-feature spec build.
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.esp32s3.csv"

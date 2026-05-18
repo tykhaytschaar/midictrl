@@ -1,10 +1,10 @@
-# Target and flash
-CONFIG_IDF_TARGET="esp32s3"
-CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+# Settings common to every supported target.
+# Target-specific overrides (chip, flash size, partition file) live in
+# sdkconfig.defaults.<target>. Pick a target with `idf.py set-target esp32`
+# or `idf.py set-target esp32s3` (or use tools/build.sh).
 
-# Custom partition table
+# Custom partition table — filename is set per target.
 CONFIG_PARTITION_TABLE_CUSTOM=y
-CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
-# Slightly larger main task stack for the bring-up phase
+# Slightly larger main task stack for the bring-up phase.
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192

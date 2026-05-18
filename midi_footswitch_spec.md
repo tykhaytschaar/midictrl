@@ -8,9 +8,15 @@ Target device: Neural DSP **Nano Cortex**, controlled via MIDI from a footswitch
 
 ### 1.1 Components
 
+The firmware supports two MCU targets, picked at build time (see `tools/build.sh` or the per-target VS Code build tasks):
+
+- **ESP32 WROOM-32** (`esp32`) — MVP target. Cheaper, smaller flash (4 MB), no PSRAM, and a noticeably less-linear SAR ADC. GPIO budget is the tighter constraint here; the pinout has to share scarce general-purpose pins between 8 footswitches, the encoder, the TFT, the WS2812 chain, the MIDI UART, and the expression ADC, almost certainly using a couple of input-only pins (GPIO 34–39) with external pull-ups for some of the footswitches.
+- **ESP32-S3 WROOM-1 N16R8** (`esp32s3`) — full-feature target. 16 MB flash, 8 MB Octal PSRAM (room for an LVGL framebuffer if we want one), better-calibrated ADC, native USB-OTG. The pinout below targets this module.
+
 | Component | Notes |
 |-----------|-------|
-| ESP32-S3 module (e.g. ESP32-S3-WROOM-1 N16R8, on a DevKitC-1 board) | Main MCU with built-in WiFi/BLE, dual Xtensa core, 16 MB flash, 8 MB Octal PSRAM |
+| ESP32-S3 module (e.g. ESP32-S3-WROOM-1 N16R8, on a DevKitC-1 board) | Main MCU for the full build: built-in WiFi/BLE, dual Xtensa core, 16 MB flash, 8 MB Octal PSRAM |
+| ESP32 module (ESP32-WROOM-32, on a DevKitV1 board) | MVP MCU: dual Xtensa core, 520 KB SRAM, 4 MB flash, no PSRAM, classic ADC |
 | 3.5" IPS TFT, ST7796, SPI, 480x320, no-touch | Main display |
 | Rotary encoder (Bourns PEC11R or similar, integrated push button) | For on-device configuration |
 | 8x SPST momentary footswitches | 2 bank + 5 program + 1 tap tempo |
@@ -22,6 +28,8 @@ Target device: Neural DSP **Nano Cortex**, controlled via MIDI from a footswitch
 ### 1.2 Suggested GPIO pinout (ESP32-S3)
 
 The pinout below assumes an ESP32-S3-WROOM-1 N16R8 module. Pins 26–32 are used by the internal SPI flash, and 33–37 by the Octal PSRAM, so they are not available. Pins 0, 3, 45, 46 are strapping pins and must be avoided for footswitches or anything that could be held in an unexpected state at boot. Pins 19/20 are reserved for native USB (USB-OTG D-/D+). ADC2 cannot be used while WiFi is active, so the expression pedal must use ADC1 (GPIO 1–10).
+
+> The ESP32 WROOM-32 (MVP) variant of this table is **TODO** — the classic ESP32 has fewer freely usable GPIOs, several pins are strap- or flash-reserved, and GPIO 34–39 are input-only without internal pull-ups, so the WROOM pinout will need either external pull-ups on a few footswitches or an I²C port expander. Locked in before the first hardware revision.
 
 | GPIO | Function |
 |------|----------|
