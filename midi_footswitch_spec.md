@@ -10,8 +10,8 @@ Target device: Neural DSP **Nano Cortex**, controlled via MIDI from a footswitch
 
 The firmware supports two MCU targets, picked at build time (see `tools/build.sh` or the per-target VS Code build tasks):
 
-- **ESP32 WROOM-32** (`esp32`) — MVP target. Cheaper, smaller flash (4 MB), no PSRAM, and a noticeably less-linear SAR ADC. GPIO budget is the tighter constraint here; the pinout has to share scarce general-purpose pins between 8 footswitches, the encoder, the TFT, the WS2812 chain, the MIDI UART, and the expression ADC, almost certainly using a couple of input-only pins (GPIO 34–39) with external pull-ups for some of the footswitches.
-- **ESP32-S3 WROOM-1 N16R8** (`esp32s3`) — full-feature target. 16 MB flash, 8 MB Octal PSRAM (room for an LVGL framebuffer if we want one), better-calibrated ADC, native USB-OTG. The pinout below targets this module.
+- **ESP32 WROOM-32** (`esp32`) — MVP target. Cheaper, smaller flash (4 MB), no PSRAM, and a noticeably less-linear SAR ADC. Tight GPIO budget — see section 1.2.1 for the pinout, which uses external pull-ups on three of the footswitches.
+- **ESP32-S3 WROOM-1 N16R8** (`esp32s3`) — full-feature target. 16 MB flash, 8 MB Octal PSRAM (room for an LVGL framebuffer if we want one), better-calibrated ADC, native USB-OTG. Pinout deferred (see 1.2.2).
 
 | Component | Notes |
 |-----------|-------|
@@ -25,54 +25,61 @@ The firmware supports two MCU targets, picked at build time (see `tools/build.sh
 | MIDI TRS Type A output (instead of 5-pin DIN) | Feeds the Nano Cortex input |
 | 9V DC power supply (from pedalboard PSU) | Buck converter to 5V for USB or 3.3V LDO for the module's 3V3 rail |
 
-### 1.2 Suggested GPIO pinout (ESP32-S3)
+### 1.2 GPIO pinout
 
-The pinout below assumes an ESP32-S3-WROOM-1 N16R8 module. Pins 26–32 are used by the internal SPI flash, and 33–37 by the Octal PSRAM, so they are not available. Pins 0, 3, 45, 46 are strapping pins and must be avoided for footswitches or anything that could be held in an unexpected state at boot. Pins 19/20 are reserved for native USB (USB-OTG D-/D+). ADC2 cannot be used while WiFi is active, so the expression pedal must use ADC1 (GPIO 1–10).
+The two targets have substantially different GPIO budgets and pin restrictions, so each has its own pinout. The firmware picks the right pin header at build time based on `CONFIG_IDF_TARGET_*`.
 
-> The ESP32 WROOM-32 (MVP) variant of this table is **TODO** — the classic ESP32 has fewer freely usable GPIOs, several pins are strap- or flash-reserved, and GPIO 34–39 are input-only without internal pull-ups, so the WROOM pinout will need either external pull-ups on a few footswitches or an I²C port expander. Locked in before the first hardware revision.
+#### 1.2.1 ESP32 WROOM-32 (MVP)
 
-| GPIO | Function |
-|------|----------|
-| GPIO0 | Boot strap (reserved, do not use) |
-| GPIO1 | ADC1_CH0 → Expression pedal wiper |
-| GPIO2 | spare (ADC1_CH1) |
-| GPIO3 | strap (reserved) |
-| GPIO4 | Footswitch: Bank Down |
-| GPIO5 | Footswitch: Bank Up |
-| GPIO6 | Footswitch: Program 1 |
-| GPIO7 | Footswitch: Program 2 |
-| GPIO8 | Footswitch: Program 3 |
-| GPIO9 | Footswitch: Program 4 |
-| GPIO10 | Footswitch: Program 5 |
-| GPIO11 | Footswitch: Tap Tempo |
-| GPIO12 | Encoder A |
-| GPIO13 | Encoder B |
-| GPIO14 | Encoder button |
-| GPIO15 | WS2812 data (RMT TX channel) |
-| GPIO16 | UART1 TX → MIDI out (via 220Ω to TRS tip) |
-| GPIO17 | TFT DC |
-| GPIO18 | TFT RST |
-| GPIO19 | USB-OTG D- (reserved) |
-| GPIO20 | USB-OTG D+ (reserved) |
-| GPIO21 | TFT backlight (LEDC PWM) |
-| GPIO26–32 | Reserved (internal SPI flash on the module) |
-| GPIO33–37 | Reserved (Octal PSRAM on the -R8 variant) |
-| GPIO38 | SPI2_HOST MOSI (TFT) |
-| GPIO39 | SPI2_HOST SCK (TFT) |
-| GPIO40 | SPI2_HOST CS (TFT) |
-| GPIO41 | spare |
-| GPIO42 | spare |
-| GPIO43 | UART0 TX (USB-Serial console, reserved) |
-| GPIO44 | UART0 RX (USB-Serial console, reserved) |
-| GPIO45 | strap (reserved) |
-| GPIO46 | strap (reserved) |
+The classic ESP32 has a tight GPIO budget. After excluding internal flash pins (GPIO 6–11), strapping pins that would be risky for a button held at power-on (0, 2, 12, 15), and the UART0 console pins (1, 3), only 15 GPIOs are freely usable with the internal pull-up. The MVP needs 20 IO lines (8 footswitches + 3 encoder + WS2812 + UART MIDI + 6 TFT + 1 ADC), so **three of the footswitches go on input-only pins (GPIO 34, 35, 36) with external 10 kΩ pull-ups to 3.3 V**. ADC2 cannot be used while WiFi is active, so the expression pedal uses ADC1_CH3 on GPIO 39 (VN).
 
-SPI2_HOST (formerly "HSPI") is used for the TFT; SPI3_HOST is left free. MISO is unused since the ST7796 is write-only in this design. All footswitches and the encoder are wired with the internal pull-up enabled and active low (GPIO → switch → GND).
+| GPIO | Function | Notes |
+|------|----------|-------|
+| GPIO0  | strap (BOOT button on the DevKit) — reserved | |
+| GPIO1  | UART0 TX (USB-Serial console) — reserved | |
+| GPIO2  | strap + on-board LED — reserved | |
+| GPIO3  | UART0 RX (USB-Serial console) — reserved | |
+| GPIO4  | Footswitch: Bank Down | internal pull-up, active low |
+| GPIO5  | TFT CS (SPI3_HOST default CS) | strap-OK at boot — held high by TFT module pull-up + IDF pull-up |
+| GPIO6–11 | internal SPI flash — reserved | |
+| GPIO12 | strap MTDI — reserved | pulling high at boot bricks flash voltage |
+| GPIO13 | Footswitch: Bank Up | internal pull-up, active low |
+| GPIO14 | Footswitch: Program 1 | internal pull-up, active low |
+| GPIO15 | strap (silences boot log if low) — reserved | |
+| GPIO16 | Footswitch: Program 2 | internal pull-up, active low |
+| GPIO17 | UART1 TX → MIDI out (via 220Ω to TRS tip) | remapped from default GPIO 10 (flash) |
+| GPIO18 | TFT SCK (SPI3_HOST default SCK) | |
+| GPIO19 | TFT backlight (LEDC PWM) | |
+| GPIO20 | n/a — not bonded on the WROOM | |
+| GPIO21 | TFT DC | |
+| GPIO22 | TFT RST | |
+| GPIO23 | TFT MOSI (SPI3_HOST default MOSI) | MISO is unused — ST7796 is write-only |
+| GPIO25 | WS2812 data (RMT TX channel) | RTC-capable |
+| GPIO26 | Encoder A | RTC-capable |
+| GPIO27 | Encoder B | RTC-capable |
+| GPIO32 | Encoder button | RTC-capable, used as digital input |
+| GPIO33 | Footswitch: Program 3 | internal pull-up, active low |
+| GPIO34 | Footswitch: Program 4 | **input-only, external 10 kΩ pull-up to 3.3 V required**, active low |
+| GPIO35 | Footswitch: Program 5 | **input-only, external 10 kΩ pull-up to 3.3 V required**, active low |
+| GPIO36 (VP) | Footswitch: Tap Tempo | **input-only, external 10 kΩ pull-up to 3.3 V required**, active low |
+| GPIO39 (VN) | ADC1_CH3 → Expression pedal wiper | input-only; ADC source needs no pull-up |
+
+SPI3_HOST (formerly "VSPI") drives the TFT on its default pins. SPI2_HOST is left free. Footswitches and the encoder are active-low (GPIO → switch → GND); the three input-only footswitches additionally need an external pull-up resistor each. The expression pot is wired 3.3 V → CW, GND → CCW, wiper → GPIO 39, with an optional 100 nF cap from wiper to GND for noise.
+
+**External components required beyond the module / display / encoder / pots / footswitches:**
+- 3× 10 kΩ pull-up resistors (GPIO 34, 35, 36)
+- 1× 220 Ω resistor on MIDI TRS tip
+- 1× 220 Ω resistor on MIDI TRS ring → 3.3 V
+- 1× 100 nF cap (optional, on expression wiper to GND)
+
+#### 1.2.2 ESP32-S3 WROOM-1 N16R8
+
+> **Placeholder** — to be designed when ESP32-S3 hardware comes into focus after the WROOM MVP is stable. A speculative first pass lives in the git history (commit 4e55fac, pre-validation against the actual S3 module). Do not commit pads to a schematic from this section in its current state.
 
 ### 1.3 MIDI output circuit
 
 TRS Type A schematic (Nano Cortex input compatible):
-- Tip → 220Ω → UART1 TX (GPIO16)
+- Tip → 220Ω → UART1 TX (WROOM: GPIO 17; S3: TBD)
 - Ring → 220Ω → 3.3V
 - Sleeve → GND
 
@@ -165,7 +172,7 @@ Both messages are **global** settings, not mode/bank-level.
 
 ### 2.8 Expression pedal
 
-- Analog signal read from ADC1_CH0, 12-bit (via the ESP-IDF `esp_adc` continuous or oneshot driver).
+- Analog signal read from an ADC1 channel, 12-bit (via the ESP-IDF `esp_adc` continuous or oneshot driver). Exact channel is per-target — see section 1.2 (WROOM: ADC1_CH3 / GPIO 39).
 - Calibration: ADC values for heel/toe position (`adc_min`, `adc_max`) are stored. "Calibration" workflow on the web UI: press to heel → enter, press to toe → enter.
 - Curve: `linear`, `log`, or `exp`. ADC range mapped to MIDI 0–127 along the curve.
 - Smoothing: EMA filter, `smoothing` parameter (0–1, default 0.2). Output sends a new CC only when the computed MIDI value (0–127) has changed, at max ~100 Hz frequency.
