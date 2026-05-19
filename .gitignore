@@ -31,6 +31,10 @@ dependencies.lock
 __pycache__/
 *.pyc
 
+# Host test binaries (built locally with `make` under tests/host/)
+/tests/host/test_state_machine
+/tests/host/*.dSYM/
+
 # VS Code: keep shared task / settings / extensions, ignore per-machine state
 .vscode/c_cpp_properties.json
 .vscode/launch.json
