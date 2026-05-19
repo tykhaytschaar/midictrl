@@ -400,13 +400,19 @@ The partition table (`partitions.csv`) reserves `nvs` (24 K) for preferences, `p
 - Web UI changes are only saved to flash when the user explicitly presses "Save" (during live editing they live in RAM).
 - After save, the RAM configuration takes effect immediately, no reboot needed.
 
+### 8.4 Virtual control surface (development aid)
+
+The web UI also exposes a schematic drawing of the device with clickable footswitches, encoder controls (rotate-left / rotate-right / press buttons), an expression-pedal slider, and a small TFT preview area. The browser side opens a websocket; clicks send synthetic input events (`{type: "footswitch", id: "prog1", state: "pressed"}` etc.) that the firmware feeds into the **same** FreeRTOS event queue the real `InputManager` will later push to. The firmware then publishes its state back over the same websocket — current bank/slot, alt state, LED colours, the next-to-be-rendered TFT contents, and every outgoing MIDI message — so the browser can render the LEDs, the display content, and a scrolling MIDI log.
+
+Concretely this lets the `StateMachine`, `ConfigStore`, `MidiOut`, `LedDriver`, and (later) `UiRenderer` be validated against an actual UI long before any physical hardware is wired up. Once real hardware is in place, the virtual control surface stays available as a debugging aid: virtual and real inputs simply produce identical events, and `MidiOut` always copies its outgoing stream into the websocket log alongside the UART.
+
 ---
 
 ## 9. Module Boundaries (suggested software architecture)
 
 | Module | Responsibility |
 |--------|----------------|
-| `InputManager` | Footswitch debounce, encoder read, long press detection, event push to a FreeRTOS queue |
+| `InputManager` | Footswitch debounce, encoder read, long press detection, event push to a FreeRTOS queue. The same queue also receives synthetic events from the virtual control surface (8.4), so downstream consumers see one unified event stream |
 | `StateMachine` | Current/target bank/program, browse mode, alt cache, tuner state. Only stores state and transitions |
 | `MidiOut` | Send MIDI messages over UART1 (`uart_driver`), channel handling, throttling |
 | `ExpressionPedal` | ADC1 read (`esp_adc`), smoothing, curving, MIDI send trigger |
@@ -441,16 +447,27 @@ The partition table (`partitions.csv`) reserves `nvs` (24 K) for preferences, `p
 
 ## 11. MVP Order (suggested build order)
 
-1. **Display + basic rendering**: TFT init, draw the main view with dummy data.
-2. **Input + state machine**: footswitches, encoder, debounce, browse mode, alt toggle. Still no MIDI, state changes only visible on the display.
-3. **MIDI out**: UART, message sending on state change.
-4. **LED chain**: WS2812 control, color codes for the states.
-5. **Expression pedal**: ADC, smoothing, calibration (hardcoded values for now), MIDI sending.
-6. **Persistence**: JSON config to flash, load, save.
-7. **WiFi + AP captive portal**: first-boot workflow.
-8. **Web configurator**: REST endpoints, basic HTML/CSS/JS UI.
-9. **Encoder menu**: on-device editor, covering every field.
-10. **Live status websocket**: debug and demo-ability.
-11. **Polish**: backlight PWM, LED brightness, font tweaks, empty slot rendering, error handling.
+The physical board is not yet assembled, so the work splits into a pre-hardware phase that can run entirely on the bare DevKit (driven by the virtual control surface, 8.4), and a hardware-bring-up phase that comes once the TFT, footswitches, encoder, WS2812 chain, MIDI jack, and expression pot arrive.
 
-Each phase should be independently testable and should leave the firmware in a notionally deliverable state.
+### 11.1 Pre-hardware bring-up (browser-driven)
+
+1. **StateMachine** as a host-testable component. Browse mode, alt cache (ALT_A and ALT_B), slot/bank logic, expression target resolution. Validated by macOS-side unit tests with stub callbacks, before any IDF code touches it.
+2. **ConfigStore + persistence**. JSON schema from section 6 in C structs, LittleFS read/write, NVS for the small "last state" + WiFi creds, default fallback on missing/corrupt files.
+3. **WiFi + AP captive portal**. First-boot workflow, mDNS, STA fallback.
+4. **Web configurator + virtual control surface**. The 8.2 settings UI and the 8.4 virtual control surface ship together — they share the websocket and the static-asset pipeline. By the end of this step the StateMachine + ConfigStore + MidiOut-to-websocket-log path can be exercised end-to-end from a browser.
+5. **MidiOut stub**. UART transmit code is wired up but at this point also (or only) emits messages into the websocket log so the virtual surface can render them. When real MIDI hardware arrives this becomes "and also writes to UART".
+6. **LedDriver virtual path**. LED colour state computed from the StateMachine, published to the websocket; the virtual control surface renders the LEDs as coloured dots. The RMT TX path is added in 11.2 alongside the physical chain.
+
+By the end of 11.1 the firmware does almost everything it needs to do — only the actual presentation (TFT) and physical input (footswitches/encoder/pot) are missing.
+
+### 11.2 Hardware bring-up (once the board is wired)
+
+7. **Display + basic rendering**: TFT init via `esp_lcd`, render the main view from 4.1 with bitmap fonts.
+8. **InputManager**: footswitches and encoder, debounce, long-press detection. Events push to the same queue the virtual surface uses — downstream is unaffected.
+9. **MidiOut UART path**: physical TRS Type A output enabled alongside the existing websocket log.
+10. **LED chain**: WS2812 over RMT, mirroring the colours already computed for the virtual surface.
+11. **Expression pedal**: ADC1, smoothing, calibration via the existing 8.2 UI.
+12. **Encoder menu** (3.x): on-device editor over the encoder + TFT, covering every field.
+13. **Polish**: backlight PWM, LED brightness, font tweaks, empty-slot rendering, error handling, log level cleanup.
+
+Each phase should be independently testable and should leave the firmware in a notionally deliverable state — in 11.1, "testable" means browser-driven; in 11.2, on the hardware.
