@@ -95,10 +95,16 @@
   .slot-name-disp { flex: 1; }
   .slot-summary { color: var(--muted); font-size: 0.85em; }
   .slot-body { padding: 8px 16px 16px; }
+  .slot-section { padding-top: 12px; margin-top: 12px; border-top: 1px solid var(--border); }
+  .slot-section:first-child { padding-top: 0; margin-top: 0; border-top: 0; }
   .msg-row { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
   .msg-row select, .msg-row input { padding: 4px 6px; font-size: 0.9em; }
   .msg-row .pc-only { display: none; }
   .msg-row.cc .pc-only { display: inline; }
+  .icon-btn { min-width: 36px; padding: 6px 10px; }
+  .field { display: block; margin-bottom: 10px; }
+  .field > label { display: block; font-size: 0.9em; color: var(--muted); margin-bottom: 4px; }
+  .field > input { display: block; width: 100%; }
 
   .hint { color: var(--muted); font-size: 0.85em; margin: 4px 0; }
   .err { color: var(--err); }
@@ -162,14 +168,15 @@
 <!-- ===================== CONFIG ===================== -->
 <section class="panel" id="tab-config" hidden>
   <div class="row">
-    <label>Bank: <select id="bank-select"></select></label>
-    <button id="bank-add-btn">+ Add bank</button>
-    <button id="bank-delete-btn" class="danger">Delete bank</button>
+    <select id="bank-select" style="flex:1;"></select>
+    <button id="bank-add-btn" class="icon-btn" title="Add bank">+</button>
+    <button id="bank-delete-btn" class="icon-btn danger" title="Delete bank">🗑</button>
   </div>
 
   <div id="bank-editor" hidden>
-    <div class="row">
-      <label style="flex:1;">Name: <input id="bank-name" type="text" maxlength="31" style="width:100%;"></label>
+    <div class="field">
+      <label for="bank-name">Name</label>
+      <input id="bank-name" type="text" maxlength="31">
     </div>
     <fieldset>
       <legend>Bank expression default</legend>
@@ -334,11 +341,10 @@ function newEmptySlot() {
     alternative: null,
   };
 }
-function newEmptyBank(idx) {
-  return {
-    name: '', expression_default: null,
-    programs: [newEmptySlot(), newEmptySlot(), newEmptySlot(), newEmptySlot(), newEmptySlot()],
-  };
+function newEmptyBank() {
+  const programs = [];
+  for (let i = 0; i < programsPerBank; i++) programs.push(newEmptySlot());
+  return { name: '', expression_default: null, programs };
 }
 
 function markDirty() {
@@ -411,55 +417,62 @@ function renderSlot(slot, idx) {
   d.dataset.idx = idx;
 
   const sum = document.createElement('summary');
-  const summary = describeSlot(slot);
   sum.innerHTML = `
     <span class="slot-num">${idx + 1}</span>
-    <span class="slot-name-disp">${escapeHtml(slot.name || `(slot ${idx + 1})`)}</span>
-    <span class="slot-summary">${summary}</span>`;
+    <span class="slot-name-disp"></span>
+    <span class="slot-summary"></span>`;
   d.appendChild(sum);
+  refreshSlotSummary(sum, slot, idx);
 
   const body = document.createElement('div');
   body.className = 'slot-body';
   body.innerHTML = `
-    <div class="row">
-      <label style="flex:1;">Name: <input class="slot-name-input" type="text" maxlength="31" style="width:100%;"></label>
-    </div>
-    <h4>Messages</h4>
-    <div class="messages-list"></div>
-    <div class="row"><button class="msg-add-pc">+ PC</button><button class="msg-add-cc">+ CC</button></div>
-
-    <div class="row"><label><input type="checkbox" class="alt-enable"> Alternative</label></div>
-    <div class="alt-body" hidden>
-      <div class="row">
-        <label style="flex:1;">Alt name: <input class="alt-name-input" type="text" maxlength="31" style="width:100%;"></label>
+    <div class="slot-section">
+      <div class="field">
+        <label>Name</label>
+        <input class="slot-name-input" type="text" maxlength="31">
       </div>
-      <h4>Alt messages</h4>
-      <div class="alt-messages-list"></div>
-      <div class="row"><button class="alt-msg-add-pc">+ PC</button><button class="alt-msg-add-cc">+ CC</button></div>
+      <h4>Messages</h4>
+      <div class="messages-list"></div>
+      <div class="row"><button class="msg-add icon-btn" title="Add message">+</button></div>
     </div>
 
-    <fieldset>
-      <legend>Slot expression target</legend>
-      <div class="row">
-        <label><input type="checkbox" class="slot-expr-enable"> Override bank default</label>
-        <label>CC <input class="slot-expr-cc" type="number" min="0" max="127" disabled></label>
-        <label>Ch <input class="slot-expr-ch" type="number" min="1" max="16" disabled></label>
+    <div class="slot-section">
+      <div class="row"><label><input type="checkbox" class="alt-enable"> Alternative</label></div>
+      <div class="alt-body" hidden>
+        <div class="field">
+          <label>Alt name</label>
+          <input class="alt-name-input" type="text" maxlength="31">
+        </div>
+        <h4>Alt messages</h4>
+        <div class="alt-messages-list"></div>
+        <div class="row"><button class="alt-msg-add icon-btn" title="Add alt message">+</button></div>
       </div>
-    </fieldset>`;
+    </div>
+
+    <div class="slot-section">
+      <fieldset>
+        <legend>Slot expression target</legend>
+        <div class="row">
+          <label><input type="checkbox" class="slot-expr-enable"> Override bank default</label>
+          <label>CC <input class="slot-expr-cc" type="number" min="0" max="127" disabled></label>
+          <label>Ch <input class="slot-expr-ch" type="number" min="1" max="16" disabled></label>
+        </div>
+      </fieldset>
+    </div>`;
 
   // Name
   body.querySelector('.slot-name-input').value = slot.name || '';
   body.querySelector('.slot-name-input').addEventListener('input', (e) => {
     slot.name = e.target.value;
-    sum.querySelector('.slot-name-disp').textContent = e.target.value || `(slot ${idx + 1})`;
+    refreshSlotSummary(sum, slot, idx);
     markDirty();
   });
 
   // Messages
   const mlist = body.querySelector('.messages-list');
-  slot.messages.forEach((m, i) => mlist.appendChild(renderMessage(m, slot.messages, i, d)));
-  body.querySelector('.msg-add-pc').addEventListener('click', () => addMessage(slot.messages, 'PC', mlist, d));
-  body.querySelector('.msg-add-cc').addEventListener('click', () => addMessage(slot.messages, 'CC', mlist, d));
+  renderMessageList(mlist, slot.messages, d);
+  body.querySelector('.msg-add').addEventListener('click', () => addMessage(slot.messages, mlist, d));
 
   // Alt
   const altEnable = body.querySelector('.alt-enable');
@@ -474,29 +487,24 @@ function renderSlot(slot, idx) {
     }
     altBody.hidden = !e.target.checked;
     if (e.target.checked) syncAltBody();
-    sum.querySelector('.slot-summary').textContent = describeSlot(slot);
+    refreshSlotSummary(sum, slot, idx);
     markDirty();
   });
   function syncAltBody() {
     if (!slot.alternative) return;
     body.querySelector('.alt-name-input').value = slot.alternative.name || '';
-    const al = body.querySelector('.alt-messages-list');
-    al.innerHTML = '';
-    slot.alternative.messages.forEach((m, i) => al.appendChild(renderMessage(m, slot.alternative.messages, i, d)));
+    renderMessageList(body.querySelector('.alt-messages-list'), slot.alternative.messages, d);
   }
   syncAltBody();
   body.querySelector('.alt-name-input')?.addEventListener('input', (e) => {
     if (!slot.alternative) return;
     slot.alternative.name = e.target.value;
+    refreshSlotSummary(sum, slot, idx);
     markDirty();
   });
-  body.querySelector('.alt-msg-add-pc').addEventListener('click', () => {
+  body.querySelector('.alt-msg-add').addEventListener('click', () => {
     if (!slot.alternative) return;
-    addMessage(slot.alternative.messages, 'PC', body.querySelector('.alt-messages-list'), d);
-  });
-  body.querySelector('.alt-msg-add-cc').addEventListener('click', () => {
-    if (!slot.alternative) return;
-    addMessage(slot.alternative.messages, 'CC', body.querySelector('.alt-messages-list'), d);
+    addMessage(slot.alternative.messages, body.querySelector('.alt-messages-list'), d);
   });
 
   // Slot expression override
@@ -524,11 +532,29 @@ function renderSlot(slot, idx) {
 function describeSlot(slot) {
   const parts = [];
   parts.push(`${slot.messages.length} msg${slot.messages.length === 1 ? '' : 's'}`);
-  if (slot.alternative) parts.push('alt');
+  if (slot.alternative) parts.push(`${slot.alternative.messages.length} alt`);
   return parts.join(' · ');
 }
 
-function renderMessage(msg, parentList, listIdx, slotDetails) {
+function refreshSlotSummary(sum, slot, idx) {
+  const primary = slot.name || `(slot ${idx + 1})`;
+  const altSuffix = slot.alternative
+    ? ' / ' + (slot.alternative.name || 'ALT')
+    : '';
+  sum.querySelector('.slot-name-disp').textContent = primary + altSuffix;
+  sum.querySelector('.slot-summary').textContent = describeSlot(slot);
+}
+
+function renderMessageList(listEl, parentList, slotDetails) {
+  listEl.innerHTML = '';
+  parentList.forEach(m => listEl.appendChild(renderMessage(m, parentList, listEl, slotDetails)));
+  // Refresh the slot summary on this slot since message count/order may have changed.
+  const slotIdx = parseInt(slotDetails.dataset.idx);
+  const slot = configData.banks[currentBank].programs[slotIdx];
+  refreshSlotSummary(slotDetails.querySelector('summary'), slot, slotIdx);
+}
+
+function renderMessage(msg, parentList, listEl, slotDetails) {
   const r = document.createElement('div');
   r.className = `msg-row ${msg.type === 'CC' ? 'cc' : ''}`;
   r.innerHTML = `
@@ -536,7 +562,9 @@ function renderMessage(msg, parentList, listIdx, slotDetails) {
     <label>num<input class="msg-num" type="number" min="0" max="127"></label>
     <label class="pc-only">val<input class="msg-val" type="number" min="0" max="127"></label>
     <label>ch<input class="msg-ch" type="number" min="1" max="16"></label>
-    <button class="msg-remove danger">×</button>`;
+    <button class="msg-up" title="Move up">↑</button>
+    <button class="msg-down" title="Move down">↓</button>
+    <button class="msg-remove danger" title="Remove">×</button>`;
   r.querySelector('.msg-type').value = msg.type;
   r.querySelector('.msg-num').value = msg.num;
   r.querySelector('.msg-val').value = msg.val ?? 0;
@@ -550,28 +578,33 @@ function renderMessage(msg, parentList, listIdx, slotDetails) {
   r.querySelector('.msg-num').addEventListener('input', (e) => { msg.num = parseInt(e.target.value); markDirty(); });
   r.querySelector('.msg-val').addEventListener('input', (e) => { msg.val = parseInt(e.target.value); markDirty(); });
   r.querySelector('.msg-ch').addEventListener('input',  (e) => { msg.ch  = parseInt(e.target.value); markDirty(); });
+  r.querySelector('.msg-up').addEventListener('click', () => {
+    const i = parentList.indexOf(msg);
+    if (i <= 0) return;
+    [parentList[i - 1], parentList[i]] = [parentList[i], parentList[i - 1]];
+    renderMessageList(listEl, parentList, slotDetails);
+    markDirty();
+  });
+  r.querySelector('.msg-down').addEventListener('click', () => {
+    const i = parentList.indexOf(msg);
+    if (i < 0 || i >= parentList.length - 1) return;
+    [parentList[i + 1], parentList[i]] = [parentList[i], parentList[i + 1]];
+    renderMessageList(listEl, parentList, slotDetails);
+    markDirty();
+  });
   r.querySelector('.msg-remove').addEventListener('click', () => {
     const i = parentList.indexOf(msg);
     if (i >= 0) parentList.splice(i, 1);
-    r.remove();
-    // Re-render summary
-    const slotIdx = parseInt(slotDetails.dataset.idx);
-    const slot = configData.banks[currentBank].programs[slotIdx];
-    slotDetails.querySelector('.slot-summary').textContent = describeSlot(slot);
+    renderMessageList(listEl, parentList, slotDetails);
     markDirty();
   });
   return r;
 }
 
-function addMessage(parentList, type, listEl, slotDetails) {
-  const m = type === 'CC'
-    ? { type: 'CC', num: 0, val: 0, ch: 1 }
-    : { type: 'PC', num: 0, ch: 1 };
-  parentList.push(m);
-  listEl.appendChild(renderMessage(m, parentList, parentList.length - 1, slotDetails));
-  const slotIdx = parseInt(slotDetails.dataset.idx);
-  const slot = configData.banks[currentBank].programs[slotIdx];
-  slotDetails.querySelector('.slot-summary').textContent = describeSlot(slot);
+function addMessage(parentList, listEl, slotDetails) {
+  // New messages default to PC — switch via the per-row dropdown.
+  parentList.push({ type: 'PC', num: 0, ch: 1 });
+  renderMessageList(listEl, parentList, slotDetails);
   markDirty();
 }
 
@@ -617,7 +650,7 @@ $('bank-expr-ch').addEventListener('input', () => {
 
 $('bank-add-btn').addEventListener('click', () => {
   if (configData.banks.length >= 32) return;
-  configData.banks.push(newEmptyBank(configData.banks.length));
+  configData.banks.push(newEmptyBank());
   currentBank = configData.banks.length - 1;
   renderConfigTab();
   markDirty();
@@ -652,8 +685,8 @@ $('config-save-btn').addEventListener('click', async () => {
     // a partially-empty bank in flash).
     const payload = JSON.parse(JSON.stringify(configData));
     payload.banks.forEach(b => {
-      while (b.programs.length < 5) b.programs.push(newEmptySlot());
-      b.programs.length = 5;
+      while (b.programs.length < programsPerBank) b.programs.push(newEmptySlot());
+      b.programs.length = programsPerBank;
     });
     const r = await fetch('/api/config', {
       method: 'POST',
