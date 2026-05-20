@@ -33,6 +33,7 @@ __pycache__/
 
 # Host test binaries (built locally with `make` under tests/host/)
 /tests/host/test_state_machine
+/tests/host/test_config
 /tests/host/*.dSYM/
 
 # VS Code: keep shared task / settings / extensions, ignore per-machine state

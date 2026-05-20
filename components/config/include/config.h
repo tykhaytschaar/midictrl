@@ -93,3 +93,8 @@ typedef struct {
     bank_t banks[MAX_BANKS];
     uint8_t bank_count;
 } config_t;
+
+// Populate `out` with the factory defaults (1 empty bank, 5 empty slots —
+// spec section 7.3 step 1; global defaults from spec section 6 example).
+// Pure-C, no IDF dependencies — usable host-side.
+void config_init_defaults(config_t *out);
