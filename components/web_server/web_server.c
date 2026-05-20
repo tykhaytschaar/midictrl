@@ -191,6 +191,7 @@ static esp_err_t status_handler(httpd_req_t *req)
     cJSON_AddBoolToObject(sm,   "tuner_on", snap.tuner_on);
 
     cJSON_AddNumberToObject(root, "bank_count", cfg->bank_count);
+    cJSON_AddNumberToObject(root, "programs_per_bank", PROGRAMS_PER_BANK);
 
     char *str = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);

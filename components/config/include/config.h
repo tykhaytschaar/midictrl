@@ -7,7 +7,20 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define PROGRAMS_PER_BANK       5
+// IDF builds get this from menuconfig (see components/config/Kconfig).
+// Host builds (tests/host/) fall back to 5.
+#if defined(__has_include)
+#  if __has_include("sdkconfig.h")
+#    include "sdkconfig.h"
+#  endif
+#endif
+
+#ifdef CONFIG_MIDICTRL_PROGRAMS_PER_BANK
+#  define PROGRAMS_PER_BANK CONFIG_MIDICTRL_PROGRAMS_PER_BANK
+#else
+#  define PROGRAMS_PER_BANK 5
+#endif
+
 #define MAX_BANKS               32
 #define MAX_MIDI_MSGS_PER_LIST  8
 #define MAX_NAME_LEN            32

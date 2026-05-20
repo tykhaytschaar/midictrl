@@ -1,0 +1,12 @@
+menu "midictrl"
+
+config MIDICTRL_PROGRAMS_PER_BANK
+    int "Programs per bank"
+    default 5
+    range 4 5
+    help
+        Number of program slots per bank, matching the physical
+        footswitch count. Changing this changes both the in-memory
+        config_t layout and the slot buttons rendered in the web UI.
+
+endmenu

@@ -11,3 +11,6 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 
 # WebSocket support in esp_http_server — needed by the web_server component.
 CONFIG_HTTPD_WS_SUPPORT=y
+
+# midictrl
+CONFIG_MIDICTRL_PROGRAMS_PER_BANK=4
