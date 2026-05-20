@@ -5,6 +5,7 @@
 
 #include "board_pins.h"
 #include "config_store.h"
+#include "input_manager.h"
 #include "midi_out.h"
 #include "state_machine.h"
 #include "web_server.h"
@@ -57,6 +58,13 @@ static void sm_tick_task(void *arg)
         if (g_sm) state_machine_dispatch(g_sm, &e);
         vTaskDelay(pdMS_TO_TICKS(200));
     }
+}
+
+// Bridge for input_manager_cb_t (sm_event_t *, void *) to the SM's
+// dispatch entry point (state_machine_t *, const sm_event_t *).
+static void input_to_sm(const sm_event_t *evt, void *ctx)
+{
+    state_machine_dispatch((state_machine_t *)ctx, evt);
 }
 
 // --- WiFi state breadcrumb --------------------------------------------------
@@ -121,6 +129,27 @@ void app_main(void)
     } else {
         xTaskCreate(sm_tick_task, "sm_tick", 2048, NULL, 4, NULL);
     }
+
+    // Long-press thresholds. spec 2.6 has the tap LP at the SHORT timing
+    // (tuner trigger), while spec 2.2 has bank LPs at the LONG timing
+    // (user functions). Program LPs use LONG too — the SM ignores them
+    // for now (spec 2.2 "future hook").
+    const uint32_t lps = cfg->global.long_press_short_ms;
+    const uint32_t lpl = cfg->global.long_press_long_ms;
+    const input_manager_button_t buttons[] = {
+        {BOARD_FS_BANK_DOWN_GPIO, SM_FS_BANK_DOWN, true,  lpl},
+        {BOARD_FS_BANK_UP_GPIO,   SM_FS_BANK_UP,   true,  lpl},
+        {BOARD_FS_PROG1_GPIO,     SM_FS_PROG_1,    true,  lpl},
+        {BOARD_FS_PROG2_GPIO,     SM_FS_PROG_2,    true,  lpl},
+        {BOARD_FS_PROG3_GPIO,     SM_FS_PROG_3,    true,  lpl},
+        {BOARD_FS_PROG4_GPIO,     SM_FS_PROG_4,    false, lpl},  // input-only
+        {BOARD_FS_PROG5_GPIO,     SM_FS_PROG_5,    false, lpl},  // input-only
+        {BOARD_FS_TAP_GPIO,       SM_FS_TAP,       false, lps},  // input-only, tuner timing
+    };
+    input_manager_init(buttons,
+                       sizeof(buttons) / sizeof(buttons[0]),
+                       input_to_sm,
+                       g_sm);
 
     wifi_manager_t *wm = wifi_manager_init();
     if (!wm) {
