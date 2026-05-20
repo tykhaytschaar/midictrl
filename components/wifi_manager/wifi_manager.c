@@ -21,7 +21,8 @@ static const char *TAG = "wifi_manager";
 #define WIFI_NVS_NS              "wifi"
 #define WIFI_NVS_KEY_SSID        "ssid"
 #define WIFI_NVS_KEY_PASS        "pass"
-#define WIFI_MGR_STA_TIMEOUT_MS  15000
+#define WIFI_MGR_STA_TIMEOUT_MS  20000
+#define WIFI_MGR_MAX_STA_TRIES   5     // give up + fall back to AP after this many disconnects
 #define MDNS_HOSTNAME            "midifoot"
 #define MDNS_INSTANCE            "MIDI Footswitch"
 #define AP_SSID_PREFIX           "midifoot-"
@@ -38,6 +39,7 @@ struct wifi_manager {
     char ssid[33];     // 32 + NUL
     char ip[16];       // dotted-quad
     bool mdns_started;
+    int sta_attempts;
 };
 
 static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
@@ -47,11 +49,20 @@ static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *da
 
     switch (id) {
     case WIFI_EVENT_STA_START:
+        mgr->sta_attempts = 1;
         esp_wifi_connect();
         break;
     case WIFI_EVENT_STA_DISCONNECTED:
-        ESP_LOGW(TAG, "STA disconnected");
-        xEventGroupSetBits(mgr->events, STA_DISCONNECTED_BIT);
+        if (mgr->sta_attempts < WIFI_MGR_MAX_STA_TRIES) {
+            mgr->sta_attempts++;
+            ESP_LOGW(TAG, "STA disconnected — retry %d/%d",
+                     mgr->sta_attempts, WIFI_MGR_MAX_STA_TRIES);
+            esp_wifi_connect();
+        } else {
+            ESP_LOGW(TAG, "STA gave up after %d attempts — falling back to AP",
+                     WIFI_MGR_MAX_STA_TRIES);
+            xEventGroupSetBits(mgr->events, STA_DISCONNECTED_BIT);
+        }
         break;
     case WIFI_EVENT_AP_STACONNECTED: {
         wifi_event_ap_staconnected_t *e = (wifi_event_ap_staconnected_t *)data;
@@ -75,6 +86,9 @@ static void on_ip_event(void *arg, esp_event_base_t base, int32_t id, void *data
     ip_event_got_ip_t *e = (ip_event_got_ip_t *)data;
     snprintf(mgr->ip, sizeof(mgr->ip), IPSTR, IP2STR(&e->ip_info.ip));
     ESP_LOGI(TAG, "STA got IP %s", mgr->ip);
+    // Reset the retry budget so a runtime disconnect later gets a full
+    // round of reconnect attempts before any AP fallback signal.
+    mgr->sta_attempts = 0;
     xEventGroupSetBits(mgr->events, STA_GOT_IP_BIT);
 }
 
@@ -233,3 +247,61 @@ void wifi_manager_destroy(wifi_manager_t *mgr)
 wifi_mgr_state_t wifi_manager_state(const wifi_manager_t *mgr) { return mgr->state; }
 const char *wifi_manager_ssid(const wifi_manager_t *mgr) { return mgr->ssid; }
 const char *wifi_manager_ip(const wifi_manager_t *mgr) { return mgr->ip; }
+
+esp_err_t wifi_manager_scan(wifi_manager_t *mgr, wifi_scan_result_t *out, size_t *count)
+{
+    if (!mgr || !out || !count) return ESP_ERR_INVALID_ARG;
+
+    // Scanning needs the STA radio. We're typically in AP-only mode here;
+    // flip to APSTA so we don't drop already-connected clients.
+    wifi_mode_t mode;
+    if (esp_wifi_get_mode(&mode) == ESP_OK && mode == WIFI_MODE_AP) {
+        esp_err_t err = esp_wifi_set_mode(WIFI_MODE_APSTA);
+        if (err != ESP_OK) return err;
+    }
+
+    wifi_scan_config_t cfg = {0};
+    esp_err_t err = esp_wifi_scan_start(&cfg, true);  // blocking
+    if (err != ESP_OK) return err;
+
+    uint16_t found = 0;
+    esp_wifi_scan_get_ap_num(&found);
+    uint16_t to_copy = (found > *count) ? (uint16_t)*count : found;
+
+    if (to_copy == 0) {
+        *count = 0;
+        return ESP_OK;
+    }
+    wifi_ap_record_t *records = calloc(to_copy, sizeof(*records));
+    if (!records) return ESP_ERR_NO_MEM;
+    uint16_t actual = to_copy;
+    err = esp_wifi_scan_get_ap_records(&actual, records);
+    if (err != ESP_OK) {
+        free(records);
+        return err;
+    }
+    for (uint16_t i = 0; i < actual; i++) {
+        strncpy(out[i].ssid, (const char *)records[i].ssid, sizeof(out[i].ssid) - 1);
+        out[i].ssid[sizeof(out[i].ssid) - 1] = '\0';
+        out[i].rssi = records[i].rssi;
+        out[i].needs_password = (records[i].authmode != WIFI_AUTH_OPEN);
+    }
+    free(records);
+    *count = actual;
+    return ESP_OK;
+}
+
+esp_err_t wifi_manager_set_sta_credentials(wifi_manager_t *mgr,
+                                            const char *ssid, const char *pass)
+{
+    (void)mgr;
+    if (!ssid) return ESP_ERR_INVALID_ARG;
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(WIFI_NVS_NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) return err;
+    err = nvs_set_str(h, WIFI_NVS_KEY_SSID, ssid);
+    if (err == ESP_OK) err = nvs_set_str(h, WIFI_NVS_KEY_PASS, pass ? pass : "");
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    return err;
+}

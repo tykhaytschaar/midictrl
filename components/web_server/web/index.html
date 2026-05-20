@@ -76,8 +76,27 @@
 <h2>MIDI log</h2>
 <pre id="midi-log"></pre>
 
+<h2>WiFi</h2>
+<div id="wifi-panel">
+  <dl>
+    <dt>State:</dt> <dd id="wifi-state">…</dd>
+    <dt>SSID:</dt>  <dd id="wifi-ssid">…</dd>
+    <dt>IP:</dt>    <dd id="wifi-ip">…</dd>
+  </dl>
+  <p class="hint">Join your home WiFi to make testing easier — after Save the device will restart and reconnect on the new network, accessible at <code>http://midifoot.local</code>.</p>
+  <div class="row">
+    <button id="wifi-scan-btn">Scan</button>
+    <select id="wifi-ssid-select" disabled><option>—</option></select>
+  </div>
+  <div class="row">
+    <input id="wifi-pass" type="password" placeholder="Password (empty for open networks)" autocomplete="off" style="flex:1; padding:8px; font:inherit; border:1px solid #aaa; border-radius:6px;">
+    <button id="wifi-save-btn">Save &amp; restart</button>
+  </div>
+  <p id="wifi-msg" class="hint"></p>
+</div>
+
 <footer>
-  Phase 11.1 step 4 / commit 2 — WebSocket + virtual input. Full schematic UI + config editor in the next commit.
+  Phase 11.1 step 4 / commit 3 — WiFi configurator. Full schematic UI + config editor in the next commit.
 </footer>
 
 <script>
@@ -138,6 +157,70 @@ function connect() {
     }
   };
 }
+
+// --- WiFi panel ----------------------------------------------------------
+async function refreshWifiStatus() {
+  try {
+    const s = await (await fetch('/api/status')).json();
+    $('wifi-state').textContent = s.wifi.state;
+    $('wifi-ssid').textContent  = s.wifi.ssid || '(n/a)';
+    $('wifi-ip').textContent    = s.wifi.ip   || '(n/a)';
+  } catch (e) { /* server may be restarting */ }
+}
+
+$('wifi-scan-btn').addEventListener('click', async () => {
+  const btn = $('wifi-scan-btn');
+  btn.disabled = true; btn.textContent = 'Scanning…';
+  $('wifi-msg').textContent = '';
+  try {
+    const j = await (await fetch('/api/wifi/scan')).json();
+    const sel = $('wifi-ssid-select');
+    sel.innerHTML = '';
+    if (!j.networks || j.networks.length === 0) {
+      sel.innerHTML = '<option>(no networks found)</option>';
+      sel.disabled = true;
+    } else {
+      j.networks
+        .sort((a,b) => b.rssi - a.rssi)
+        .forEach(n => {
+          const opt = document.createElement('option');
+          opt.value = n.ssid;
+          opt.textContent = `${n.ssid}  (${n.rssi} dBm${n.needs_password ? ', 🔒' : ''})`;
+          sel.appendChild(opt);
+        });
+      sel.disabled = false;
+    }
+  } catch (e) {
+    $('wifi-msg').textContent = 'Scan failed: ' + e;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Scan';
+  }
+});
+
+$('wifi-save-btn').addEventListener('click', async () => {
+  const ssid = $('wifi-ssid-select').value;
+  const pass = $('wifi-pass').value;
+  if (!ssid || ssid === '—' || ssid.startsWith('(no')) {
+    $('wifi-msg').textContent = 'Pick an SSID first.';
+    return;
+  }
+  $('wifi-msg').textContent = 'Saving…';
+  $('wifi-save-btn').disabled = true;
+  try {
+    const r = await fetch('/api/wifi/sta', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ssid, pass}),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    $('wifi-msg').textContent = `Saved. Device is restarting — reconnect to your normal WiFi, then visit http://midifoot.local`;
+  } catch (e) {
+    $('wifi-msg').textContent = 'Save failed: ' + e;
+    $('wifi-save-btn').disabled = false;
+  }
+});
+
+refreshWifiStatus();
 
 document.querySelectorAll('[data-fs]').forEach(btn => {
   btn.addEventListener('click', (e) => {

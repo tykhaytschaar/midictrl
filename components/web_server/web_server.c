@@ -3,9 +3,11 @@
 #include "cJSON.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -216,6 +218,98 @@ static esp_err_t config_get_handler(httpd_req_t *req)
 
 #define MAX_POST_BYTES (64 * 1024)
 
+#define WIFI_SCAN_MAX 24
+
+static esp_err_t wifi_scan_handler(httpd_req_t *req)
+{
+    web_server_deps_t *deps = (web_server_deps_t *)req->user_ctx;
+    wifi_scan_result_t *results = calloc(WIFI_SCAN_MAX, sizeof(*results));
+    if (!results) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+    size_t count = WIFI_SCAN_MAX;
+    esp_err_t err = wifi_manager_scan(deps->wm, results, &count);
+    if (err != ESP_OK) {
+        free(results);
+        ESP_LOGW(TAG, "wifi scan failed: %s", esp_err_to_name(err));
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "scan failed");
+        return ESP_FAIL;
+    }
+    cJSON *root = cJSON_CreateObject();
+    cJSON *arr = cJSON_AddArrayToObject(root, "networks");
+    for (size_t i = 0; i < count; i++) {
+        if (results[i].ssid[0] == '\0') continue;  // skip hidden APs
+        cJSON *e = cJSON_CreateObject();
+        cJSON_AddStringToObject(e, "ssid", results[i].ssid);
+        cJSON_AddNumberToObject(e, "rssi", results[i].rssi);
+        cJSON_AddBoolToObject(e, "needs_password", results[i].needs_password);
+        cJSON_AddItemToArray(arr, e);
+    }
+    free(results);
+    char *str = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!str) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+    httpd_resp_set_type(req, "application/json");
+    esp_err_t sret = httpd_resp_send(req, str, HTTPD_RESP_USE_STRLEN);
+    cJSON_free(str);
+    return sret;
+}
+
+static void deferred_restart_task(void *arg)
+{
+    (void)arg;
+    vTaskDelay(pdMS_TO_TICKS(1500));
+    ESP_LOGI(TAG, "restarting to apply new WiFi credentials");
+    esp_restart();
+}
+
+static esp_err_t wifi_sta_post_handler(httpd_req_t *req)
+{
+    web_server_deps_t *deps = (web_server_deps_t *)req->user_ctx;
+    if (req->content_len > 256) {
+        httpd_resp_send_err(req, HTTPD_413_CONTENT_TOO_LARGE, "wifi payload too large");
+        return ESP_FAIL;
+    }
+    char buf[260] = {0};
+    int read = 0;
+    while (read < (int)req->content_len) {
+        int chunk = httpd_req_recv(req, buf + read, (int)req->content_len - read);
+        if (chunk <= 0) {
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "read failed");
+            return ESP_FAIL;
+        }
+        read += chunk;
+    }
+    cJSON *root = cJSON_Parse(buf);
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "invalid json");
+        return ESP_FAIL;
+    }
+    const cJSON *ssid = cJSON_GetObjectItemCaseSensitive(root, "ssid");
+    const cJSON *pass = cJSON_GetObjectItemCaseSensitive(root, "pass");
+    if (!cJSON_IsString(ssid) || ssid->valuestring[0] == '\0') {
+        cJSON_Delete(root);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "ssid required");
+        return ESP_FAIL;
+    }
+    const char *pass_str = (cJSON_IsString(pass)) ? pass->valuestring : "";
+    esp_err_t err = wifi_manager_set_sta_credentials(deps->wm, ssid->valuestring, pass_str);
+    cJSON_Delete(root);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "wifi creds save failed: %s", esp_err_to_name(err));
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "save failed");
+        return ESP_FAIL;
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"saved\":true,\"restarting\":true}", HTTPD_RESP_USE_STRLEN);
+    xTaskCreate(deferred_restart_task, "restart", 2048, NULL, 1, NULL);
+    return ESP_OK;
+}
+
 static esp_err_t config_post_handler(httpd_req_t *req)
 {
     web_server_deps_t *deps = (web_server_deps_t *)req->user_ctx;
@@ -381,14 +475,16 @@ web_server_t *web_server_start(const web_server_deps_t *deps)
     httpd_uri_t routes[] = {
         { .uri = "/",            .method = HTTP_GET,  .handler = index_handler,       .user_ctx = &ws->deps },
         { .uri = "/api/status",  .method = HTTP_GET,  .handler = status_handler,      .user_ctx = &ws->deps },
-        { .uri = "/api/config",  .method = HTTP_GET,  .handler = config_get_handler,  .user_ctx = &ws->deps },
-        { .uri = "/api/config",  .method = HTTP_POST, .handler = config_post_handler, .user_ctx = &ws->deps },
-        { .uri = "/ws",          .method = HTTP_GET,  .handler = ws_handler,          .user_ctx = ws,          .is_websocket = true },
+        { .uri = "/api/config",    .method = HTTP_GET,  .handler = config_get_handler,  .user_ctx = &ws->deps },
+        { .uri = "/api/config",    .method = HTTP_POST, .handler = config_post_handler, .user_ctx = &ws->deps },
+        { .uri = "/api/wifi/scan", .method = HTTP_GET,  .handler = wifi_scan_handler,   .user_ctx = &ws->deps },
+        { .uri = "/api/wifi/sta",  .method = HTTP_POST, .handler = wifi_sta_post_handler, .user_ctx = &ws->deps },
+        { .uri = "/ws",            .method = HTTP_GET,  .handler = ws_handler,          .user_ctx = ws,          .is_websocket = true },
     };
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); i++) {
         httpd_register_uri_handler(ws->handle, &routes[i]);
     }
-    ESP_LOGI(TAG, "HTTP server up — GET /, /api/status, /api/config, WS /ws");
+    ESP_LOGI(TAG, "HTTP server up — GET /, /api/{status,config,wifi/scan}, POST /api/{config,wifi/sta}, WS /ws");
     s_ws = ws;
     return ws;
 }
