@@ -462,12 +462,14 @@ By the end of 11.1 the firmware does almost everything it needs to do — only t
 
 ### 11.2 Hardware bring-up (once the board is wired)
 
-7. **Display + basic rendering**: TFT init via `esp_lcd`, render the main view from 4.1 with bitmap fonts.
+The new running order brings the MIDI side first so the virtual control surface drives a real Nano Cortex (or any MIDI input) end-to-end before anything else physical lands. After that, inputs come online so you don't need the browser for everything, then display, then the rest.
+
+7. **MidiOut UART path**: physical TRS Type A output enabled alongside the existing websocket log. UART1 @ 31250 8N1 on the WROOM's `BOARD_MIDI_TX_GPIO`.
 8. **InputManager**: footswitches and encoder, debounce, long-press detection. Events push to the same queue the virtual surface uses — downstream is unaffected.
-9. **MidiOut UART path**: physical TRS Type A output enabled alongside the existing websocket log.
-10. **LED chain**: WS2812 over RMT, mirroring the colours already computed for the virtual surface.
+9. **Display + basic rendering**: TFT init via `esp_lcd`, render the main view from 4.1 with bitmap fonts.
+10. **Encoder menu** (3.x): on-device editor over the encoder + TFT, covering every field.
 11. **Expression pedal**: ADC1, smoothing, calibration via the existing 8.2 UI.
-12. **Encoder menu** (3.x): on-device editor over the encoder + TFT, covering every field.
+12. **LED chain**: WS2812 over RMT, mirroring the colours already computed for the virtual surface.
 13. **Polish**: backlight PWM, LED brightness, font tweaks, empty-slot rendering, error handling, log level cleanup.
 
 Each phase should be independently testable and should leave the firmware in a notionally deliverable state — in 11.1, "testable" means browser-driven; in 11.2, on the hardware.

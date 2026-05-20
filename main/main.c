@@ -3,7 +3,9 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 
+#include "board_pins.h"
 #include "config_store.h"
+#include "midi_out.h"
 #include "state_machine.h"
 #include "web_server.h"
 #include "wifi_manager.h"
@@ -25,6 +27,7 @@ static void sm_send_midi_cb(const midi_message_t *msg, void *ctx)
     } else {
         ESP_LOGI(TAG, "MIDI -> PC num=%u ch=%u", msg->num, msg->ch);
     }
+    midi_out_send(msg);
     if (g_web) web_server_broadcast_midi(g_web, msg);
 }
 
@@ -90,6 +93,11 @@ static void wifi_log_task(void *arg)
 void app_main(void)
 {
     ESP_LOGI(TAG, "MIDI footswitch boot — skeleton");
+
+    esp_err_t err = midi_out_init(BOARD_MIDI_UART_NUM, BOARD_MIDI_TX_GPIO);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "midi_out_init failed: %s", esp_err_to_name(err));
+    }
 
     config_store_t *cs = config_store_init();
     if (!cs) {
