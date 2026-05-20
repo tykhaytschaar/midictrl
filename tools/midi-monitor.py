@@ -153,6 +153,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--port", help="Serial device (e.g. /dev/cu.usbserial-XXXX). Prompts if omitted.")
     ap.add_argument("--baud", type=int, default=31250, help="Baud rate (default 31250, standard MIDI)")
+    ap.add_argument("--raw", action="store_true",
+                    help="Print every received byte in hex alongside the decoded message — "
+                         "useful when the parser is silent and you suspect a baud mismatch.")
     args = ap.parse_args()
 
     port = args.port or pick_port_interactive()
@@ -165,17 +168,33 @@ def main() -> int:
         sys.stderr.write(f"Failed to open {port}: {e}\n")
         return 1
 
-    print(f"Listening on {port} @ {args.baud} baud. Ctrl-C to stop.\n")
+    # Some USB-serial drivers silently round non-standard bauds. Report
+    # whatever the driver came back with so a mismatch is visible.
+    actual = ser.baudrate
+    suffix = f" (requested {args.baud})" if actual != args.baud else ""
+    print(f"Listening on {port} @ {actual} baud{suffix}. Ctrl-C to stop.\n")
+
     parser = MidiParser()
+    raw_chunk: list[int] = []
+    last_flush = time.monotonic()
     try:
         while True:
             data = ser.read(64)
-            if not data:
-                continue
+            now = time.monotonic()
             stamp = time.strftime("%H:%M:%S")
             for b in data:
+                if args.raw:
+                    raw_chunk.append(b)
                 for msg in parser.feed(b):
+                    if args.raw and raw_chunk:
+                        print(f"[{stamp}] raw: {' '.join(f'0x{x:02X}' for x in raw_chunk)}")
+                        raw_chunk = []
                     print(f"[{stamp}] {msg}")
+            # Flush any tail of raw bytes that didn't complete a message in 200 ms.
+            if args.raw and raw_chunk and now - last_flush > 0.2:
+                print(f"[{stamp}] raw: {' '.join(f'0x{x:02X}' for x in raw_chunk)} (no complete message)")
+                raw_chunk = []
+            last_flush = now
     except KeyboardInterrupt:
         print("\nBye.")
         return 0
