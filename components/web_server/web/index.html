@@ -105,6 +105,16 @@
   .field { display: block; margin-bottom: 10px; }
   .field > label { display: block; font-size: 0.9em; color: var(--muted); margin-bottom: 4px; }
   .field > input { display: block; width: 100%; }
+  .field-row { display: flex; gap: 12px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
+  .field-row > label { min-width: 16em; color: var(--muted); font-size: 0.9em; }
+  .field-block { margin: 10px 0; }
+  .field-block > label { display: block; color: var(--muted); font-size: 0.9em; margin-bottom: 4px; }
+  .msg-single { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .msg-single.cc .pc-only { display: inline; }
+  .msg-single .pc-only { display: none; }
+  details#global-settings { background: var(--panel2); border: 1px solid var(--border); border-radius: 5px; padding: 8px 12px; margin-bottom: 16px; }
+  details#global-settings > summary { padding: 4px 0; font-weight: 600; }
+  details#global-settings .global-body { padding-top: 8px; }
 
   .hint { color: var(--muted); font-size: 0.85em; margin: 4px 0; }
   .err { color: var(--err); }
@@ -167,6 +177,105 @@
 
 <!-- ===================== CONFIG ===================== -->
 <section class="panel" id="tab-config" hidden>
+  <details id="global-settings">
+    <summary>Global settings</summary>
+    <div class="global-body">
+      <div class="slot-section">
+        <h4>MIDI</h4>
+        <div class="field-row">
+          <label>Default channel (1-16)</label>
+          <input id="g-midi-channel" type="number" min="1" max="16">
+        </div>
+        <div class="field-block">
+          <label>Tap message (sent on every TAP press)</label>
+          <div id="g-tap-msg" class="msg-single"></div>
+        </div>
+        <div class="field-block">
+          <label>Tuner message (sent on TAP long press to toggle tuner)</label>
+          <div id="g-tuner-msg" class="msg-single"></div>
+        </div>
+      </div>
+
+      <div class="slot-section">
+        <h4>User functions (Bank long-press)</h4>
+        <div class="field-block">
+          <label>Bank ↓ long press</label>
+          <div id="g-uf-a-list"></div>
+          <div class="row"><button id="g-uf-a-add" class="msg-add icon-btn" title="Add message">+</button></div>
+        </div>
+        <div class="field-block">
+          <label>Bank ↑ long press</label>
+          <div id="g-uf-b-list"></div>
+          <div class="row"><button id="g-uf-b-add" class="msg-add icon-btn" title="Add message">+</button></div>
+        </div>
+      </div>
+
+      <div class="slot-section">
+        <h4>Timings &amp; behaviour</h4>
+        <div class="field-row">
+          <label>Long-press short (ms, e.g. tuner trigger)</label>
+          <input id="g-lps" type="number" min="100" max="5000">
+        </div>
+        <div class="field-row">
+          <label>Long-press long (ms, e.g. user functions)</label>
+          <input id="g-lpl" type="number" min="500" max="10000">
+        </div>
+        <div class="field-row">
+          <label>Browse timeout (ms, 0 = disabled)</label>
+          <input id="g-bt" type="number" min="0" max="60000">
+        </div>
+        <div class="field-row">
+          <label>Alt toggle behaviour</label>
+          <select id="g-atb">
+            <option value="ALT_A">ALT_A — current slot only</option>
+            <option value="ALT_B">ALT_B — per-slot cache within bank</option>
+          </select>
+        </div>
+        <div class="field-row">
+          <label><input id="g-boot-resume" type="checkbox"> Resume last bank/slot on boot</label>
+        </div>
+      </div>
+
+      <div class="slot-section">
+        <h4>Brightness</h4>
+        <div class="field-row">
+          <label>Display (0-255)</label>
+          <input id="g-disp-br" type="range" min="0" max="255" style="flex:1; min-width:200px;">
+          <span id="g-disp-br-val" style="min-width:3em; text-align:right;"></span>
+        </div>
+        <div class="field-row">
+          <label>LEDs (0-255)</label>
+          <input id="g-led-br" type="range" min="0" max="255" style="flex:1; min-width:200px;">
+          <span id="g-led-br-val" style="min-width:3em; text-align:right;"></span>
+        </div>
+      </div>
+
+      <div class="slot-section">
+        <h4>Expression pedal calibration</h4>
+        <div class="field-row">
+          <label>ADC min (heel)</label>
+          <input id="g-adc-min" type="number" min="0" max="4095">
+        </div>
+        <div class="field-row">
+          <label>ADC max (toe)</label>
+          <input id="g-adc-max" type="number" min="0" max="4095">
+        </div>
+        <div class="field-row">
+          <label>Curve</label>
+          <select id="g-curve">
+            <option value="linear">linear</option>
+            <option value="log">log</option>
+            <option value="exp">exp</option>
+          </select>
+        </div>
+        <div class="field-row">
+          <label>Smoothing (0-1)</label>
+          <input id="g-smooth" type="number" min="0" max="1" step="0.05">
+        </div>
+      </div>
+    </div>
+  </details>
+
   <div class="row">
     <select id="bank-select" style="flex:1;"></select>
     <button id="bank-add-btn" class="icon-btn" title="Add bank">+</button>
@@ -194,6 +303,9 @@
   <div class="row" style="margin-top:14px;">
     <button id="config-save-btn" class="primary" disabled>Save to device</button>
     <button id="config-revert-btn" disabled>Revert</button>
+    <button id="config-export-btn">Export JSON</button>
+    <button id="config-import-btn">Import JSON</button>
+    <input id="config-import-file" type="file" accept=".json,application/json" hidden>
     <span id="config-status" class="hint"></span>
   </div>
 </section>
@@ -383,6 +495,7 @@ async function loadConfig() {
 
 function renderConfigTab() {
   if (!configData) return;
+  renderGlobalSettings();
   const sel = $('bank-select');
   sel.innerHTML = '';
   configData.banks.forEach((b, i) => {
@@ -548,10 +661,12 @@ function refreshSlotSummary(sum, slot, idx) {
 function renderMessageList(listEl, parentList, slotDetails) {
   listEl.innerHTML = '';
   parentList.forEach(m => listEl.appendChild(renderMessage(m, parentList, listEl, slotDetails)));
-  // Refresh the slot summary on this slot since message count/order may have changed.
-  const slotIdx = parseInt(slotDetails.dataset.idx);
-  const slot = configData.banks[currentBank].programs[slotIdx];
-  refreshSlotSummary(slotDetails.querySelector('summary'), slot, slotIdx);
+  if (slotDetails) {
+    // Refresh the slot summary on this slot since message count/order may have changed.
+    const slotIdx = parseInt(slotDetails.dataset.idx);
+    const slot = configData.banks[currentBank].programs[slotIdx];
+    refreshSlotSummary(slotDetails.querySelector('summary'), slot, slotIdx);
+  }
 }
 
 function renderMessage(msg, parentList, listEl, slotDetails) {
@@ -612,6 +727,99 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// --- Global settings editor ----------------------------------------------
+
+function renderSingleMessage(container, msg) {
+  container.innerHTML = `
+    <select class="msg-type"><option value="PC">PC</option><option value="CC">CC</option></select>
+    <label>num<input class="msg-num" type="number" min="0" max="127"></label>
+    <label class="pc-only">val<input class="msg-val" type="number" min="0" max="127"></label>
+    <label>ch<input class="msg-ch" type="number" min="1" max="16"></label>`;
+  container.classList.toggle('cc', msg.type === 'CC');
+  container.querySelector('.msg-type').value = msg.type;
+  container.querySelector('.msg-num').value  = msg.num;
+  container.querySelector('.msg-val').value  = msg.val ?? 0;
+  container.querySelector('.msg-ch').value   = msg.ch;
+  container.querySelector('.msg-type').addEventListener('change', (e) => {
+    msg.type = e.target.value;
+    container.classList.toggle('cc', msg.type === 'CC');
+    if (msg.type === 'CC' && msg.val === undefined) msg.val = 0;
+    markDirty();
+  });
+  container.querySelector('.msg-num').addEventListener('input', e => { msg.num = parseInt(e.target.value); markDirty(); });
+  container.querySelector('.msg-val').addEventListener('input', e => { msg.val = parseInt(e.target.value); markDirty(); });
+  container.querySelector('.msg-ch').addEventListener('input',  e => { msg.ch  = parseInt(e.target.value); markDirty(); });
+}
+
+function wireUserFunctionList(key, listEl, addBtn) {
+  const g = configData.global;
+  if (!Array.isArray(g[key])) g[key] = [];  // backend may serialise empty as null
+  renderMessageList(listEl, g[key]);
+  // The add button persists across re-renders, but we only want one click handler.
+  addBtn.onclick = () => {
+    if (!Array.isArray(g[key])) g[key] = [];
+    g[key].push({type: 'PC', num: 0, ch: 1});
+    renderMessageList(listEl, g[key]);
+    markDirty();
+  };
+}
+
+function renderGlobalSettings() {
+  if (!configData?.global) return;
+  const g = configData.global;
+  $('g-midi-channel').value = g.midi_channel;
+  renderSingleMessage($('g-tap-msg'),   g.tap_message);
+  renderSingleMessage($('g-tuner-msg'), g.tuner_message);
+  wireUserFunctionList('user_function_a', $('g-uf-a-list'), $('g-uf-a-add'));
+  wireUserFunctionList('user_function_b', $('g-uf-b-list'), $('g-uf-b-add'));
+  $('g-lps').value = g.long_press_short_ms;
+  $('g-lpl').value = g.long_press_long_ms;
+  $('g-bt').value  = g.browse_timeout_ms;
+  $('g-atb').value = g.alt_toggle_behavior;
+  $('g-boot-resume').checked = !!g.boot_resume;
+  $('g-disp-br').value = g.display_brightness;
+  $('g-disp-br-val').textContent = g.display_brightness;
+  $('g-led-br').value  = g.led_brightness;
+  $('g-led-br-val').textContent  = g.led_brightness;
+  if (g.expression) {
+    $('g-adc-min').value = g.expression.adc_min;
+    $('g-adc-max').value = g.expression.adc_max;
+    $('g-curve').value   = g.expression.curve;
+    $('g-smooth').value  = g.expression.smoothing;
+  }
+}
+
+// Wire scalar global inputs once on first script load.
+function bindGlobalInputs() {
+  const numIn = (id, set) => $(id).addEventListener('input', (e) => {
+    const v = parseInt(e.target.value);
+    if (!isNaN(v) && configData?.global) { set(v); markDirty(); }
+  });
+  numIn('g-midi-channel', v => configData.global.midi_channel = v);
+  numIn('g-lps',          v => configData.global.long_press_short_ms = v);
+  numIn('g-lpl',          v => configData.global.long_press_long_ms = v);
+  numIn('g-bt',           v => configData.global.browse_timeout_ms = v);
+  numIn('g-adc-min',      v => configData.global.expression.adc_min = v);
+  numIn('g-adc-max',      v => configData.global.expression.adc_max = v);
+
+  $('g-atb').addEventListener('change', e => { configData.global.alt_toggle_behavior = e.target.value; markDirty(); });
+  $('g-boot-resume').addEventListener('change', e => { configData.global.boot_resume = e.target.checked; markDirty(); });
+  $('g-curve').addEventListener('change', e => { configData.global.expression.curve = e.target.value; markDirty(); });
+  $('g-smooth').addEventListener('input', e => {
+    const v = parseFloat(e.target.value);
+    if (!isNaN(v) && configData?.global?.expression) { configData.global.expression.smoothing = v; markDirty(); }
+  });
+  $('g-disp-br').addEventListener('input', e => {
+    const v = parseInt(e.target.value);
+    if (configData?.global) { configData.global.display_brightness = v; $('g-disp-br-val').textContent = v; markDirty(); }
+  });
+  $('g-led-br').addEventListener('input', e => {
+    const v = parseInt(e.target.value);
+    if (configData?.global) { configData.global.led_brightness = v; $('g-led-br-val').textContent = v; markDirty(); }
+  });
+}
+bindGlobalInputs();
+
 // Bank-level event handlers
 $('bank-select').addEventListener('change', (e) => {
   currentBank = parseInt(e.target.value);
@@ -662,6 +870,42 @@ $('bank-delete-btn').addEventListener('click', () => {
   currentBank = Math.min(currentBank, configData.banks.length - 1);
   renderConfigTab();
   markDirty();
+});
+
+$('config-export-btn').addEventListener('click', () => {
+  if (!configData) return;
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+  const blob = new Blob([JSON.stringify(configData, null, 2)], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `midictrl-config-${stamp}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+$('config-import-btn').addEventListener('click', () => $('config-import-file').click());
+$('config-import-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const imported = JSON.parse(text);
+    if (!imported || !Array.isArray(imported.banks) || typeof imported.global !== 'object') {
+      throw new Error('missing banks[] or global object');
+    }
+    configData = imported;
+    currentBank = 0;
+    renderConfigTab();
+    markDirty();
+    $('config-status').className = 'ok';
+    $('config-status').textContent = 'Imported — review then Save to apply';
+  } catch (err) {
+    $('config-status').className = 'err';
+    $('config-status').textContent = 'Import failed: ' + err.message;
+  } finally {
+    e.target.value = '';  // allow re-importing the same file
+  }
 });
 
 $('config-revert-btn').addEventListener('click', () => {
