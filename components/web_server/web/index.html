@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>midictrl</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 24px; max-width: 600px; color: #222; }
+  h1 { margin-top: 0; }
+  dl { display: grid; grid-template-columns: max-content 1fr; column-gap: 18px; row-gap: 4px; }
+  dt { font-weight: 600; }
+  dd { margin: 0; }
+  .muted { color: #888; }
+  pre { background: #f4f4f6; padding: 12px; border-radius: 6px; max-height: 320px; overflow: auto; }
+  .err { color: #b3261e; }
+  footer { margin-top: 32px; color: #888; font-size: 0.85em; }
+</style>
+</head>
+<body>
+<h1>midictrl</h1>
+
+<h2>Status</h2>
+<dl>
+  <dt>WiFi:</dt>     <dd id="wifi-state" class="muted">…</dd>
+  <dt>SSID:</dt>     <dd id="wifi-ssid"  class="muted">…</dd>
+  <dt>IP:</dt>       <dd id="wifi-ip"    class="muted">…</dd>
+  <dt>Bank:</dt>     <dd id="bank"       class="muted">…</dd>
+  <dt>Slot:</dt>     <dd id="slot"       class="muted">…</dd>
+  <dt>Browse:</dt>   <dd id="browse"     class="muted">…</dd>
+  <dt>Banks total:</dt> <dd id="banks-count" class="muted">…</dd>
+</dl>
+
+<p id="err" class="err" hidden></p>
+
+<h2>Config (raw)</h2>
+<pre id="config">…</pre>
+
+<footer>
+  Phase 11.1 step 4 / commit 1 — REST + status page. Clickable controls in the next commit.
+</footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const setErr = (msg) => { $('err').hidden = !msg; $('err').textContent = msg || ''; };
+
+async function refresh() {
+  try {
+    const s = await (await fetch('/api/status')).json();
+    $('wifi-state').textContent  = s.wifi.state;
+    $('wifi-ssid').textContent   = s.wifi.ssid || '(n/a)';
+    $('wifi-ip').textContent     = s.wifi.ip   || '(n/a)';
+    $('bank').textContent        = `${s.sm.current_bank} (target ${s.sm.target_bank})`;
+    $('slot').textContent        = s.sm.current_slot + (s.sm.current_slot_alt_active ? ' (ALT)' : '');
+    $('browse').textContent      = s.sm.in_browse_mode ? 'yes' : 'no';
+    $('banks-count').textContent = s.bank_count;
+    setErr(null);
+  } catch (e) { setErr('status fetch failed: ' + e); }
+
+  try {
+    const c = await (await fetch('/api/config')).json();
+    $('config').textContent = JSON.stringify(c, null, 2);
+  } catch (e) { setErr('config fetch failed: ' + e); }
+}
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

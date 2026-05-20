@@ -29,3 +29,12 @@ config_t *config_store_get(config_store_t *cs);
 // Serialise the in-RAM config to JSON and write to LittleFS, atomically
 // where possible (write to a tmp path, then rename).
 esp_err_t config_store_save(const config_store_t *cs);
+
+// Render the in-memory config as a JSON string. Caller frees with free().
+// Returns NULL on allocation failure.
+char *config_store_to_json_alloc(const config_store_t *cs);
+
+// Replace the in-memory config from a JSON string. Does not touch flash;
+// call config_store_save() to persist. Falls back to defaults on parse
+// failure (so an invalid POST never leaves the device with no banks).
+esp_err_t config_store_from_json(config_store_t *cs, const char *json_str);

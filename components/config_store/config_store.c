@@ -401,12 +401,18 @@ static esp_err_t write_file_atomic(const char *path, const char *tmp_path,
     return ESP_OK;
 }
 
-static esp_err_t save_config(const config_t *cfg)
+static char *config_to_json_alloc(const config_t *cfg)
 {
     cJSON *root = encode_config(cfg);
-    if (!root) return ESP_ERR_NO_MEM;
+    if (!root) return NULL;
     char *str = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
+    return str;
+}
+
+static esp_err_t save_config(const config_t *cfg)
+{
+    char *str = config_to_json_alloc(cfg);
     if (!str) return ESP_ERR_NO_MEM;
     esp_err_t err = write_file_atomic(CONFIG_PATH, CONFIG_TMP_PATH, str, strlen(str));
     cJSON_free(str);
@@ -508,4 +514,27 @@ config_t *config_store_get(config_store_t *cs)
 esp_err_t config_store_save(const config_store_t *cs)
 {
     return save_config(&cs->cfg);
+}
+
+char *config_store_to_json_alloc(const config_store_t *cs)
+{
+    return config_to_json_alloc(&cs->cfg);
+}
+
+esp_err_t config_store_from_json(config_store_t *cs, const char *json_str)
+{
+    cJSON *root = cJSON_Parse(json_str);
+    if (!root) {
+        ESP_LOGW(TAG, "config_store_from_json: parse failed");
+        return ESP_ERR_INVALID_ARG;
+    }
+    config_t parsed;
+    bool ok = decode_config(root, &parsed);
+    cJSON_Delete(root);
+    if (!ok) {
+        ESP_LOGW(TAG, "config_store_from_json: shape invalid");
+        return ESP_ERR_INVALID_ARG;
+    }
+    cs->cfg = parsed;
+    return ESP_OK;
 }
