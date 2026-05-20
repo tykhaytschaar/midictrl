@@ -19,7 +19,7 @@ The firmware supports two MCU targets, picked at build time (see `tools/build.sh
 | ESP32 module (ESP32-WROOM-32, on a DevKitV1 board) | MVP MCU: dual Xtensa core, 520 KB SRAM, 4 MB flash, no PSRAM, classic ADC |
 | 3.5" IPS TFT, ST7796, SPI, 480x320, no-touch | Main display |
 | Rotary encoder (Bourns PEC11R or similar, integrated push button) | For on-device configuration |
-| 8x SPST momentary footswitches | 2 bank + 5 program + 1 tap tempo |
+| 8x SPST momentary footswitches | 2 bank + 5 program + 1 tap tempo. The number of program slots that the firmware actually consumes is build-time configurable (see section 6); the default is 4, with the 5th switch still wired up but unused. |
 | WS2812B / SK6812 LED chain (at least 5, optionally +2-3 status LEDs) | Program slot colors and status. Driven via RMT peripheral |
 | Expression pedal input (TRS jack, typically 10k–25k log/lin pot) | Wired to an ADC1 channel (ADC2 cannot be used while WiFi is active) |
 | MIDI TRS Type A output (instead of 5-pin DIN) | Feeds the Nano Cortex input |
@@ -31,7 +31,7 @@ The two targets have substantially different GPIO budgets and pin restrictions, 
 
 #### 1.2.1 ESP32 WROOM-32 (MVP)
 
-The classic ESP32 has a tight GPIO budget. After excluding internal flash pins (GPIO 6–11), strapping pins that would be risky for a button held at power-on (0, 2, 12, 15), and the UART0 console pins (1, 3), only 15 GPIOs are freely usable with the internal pull-up. The MVP needs 20 IO lines (8 footswitches + 3 encoder + WS2812 + UART MIDI + 6 TFT + 1 ADC), so **three of the footswitches go on input-only pins (GPIO 34, 35, 36) with external 10 kΩ pull-ups to 3.3 V**. ADC2 cannot be used while WiFi is active, so the expression pedal uses ADC1_CH3 on GPIO 39 (VN).
+The classic ESP32 has a tight GPIO budget. After excluding internal flash pins (GPIO 6–11), strapping pins that would be risky for a button held at power-on (0, 2, 12, 15), and the UART0 console pins (1, 3), only 15 GPIOs are freely usable with the internal pull-up. The board wires all five program footswitches even though the firmware's default `PROGRAMS_PER_BANK` is 4 — switches beyond N go unread at runtime but don't have to come off the schematic. With 8 footswitches plus the rest of the I/O budget (3 encoder + WS2812 + UART MIDI + 6 TFT + 1 ADC = 20 lines), **three of the footswitches go on input-only pins (GPIO 34, 35, 36) with external 10 kΩ pull-ups to 3.3 V**. ADC2 cannot be used while WiFi is active, so the expression pedal uses ADC1_CH3 on GPIO 39 (VN).
 
 | GPIO | Function | Notes |
 |------|----------|-------|
@@ -60,7 +60,7 @@ The classic ESP32 has a tight GPIO budget. After excluding internal flash pins (
 | GPIO32 | Encoder button | RTC-capable, used as digital input |
 | GPIO33 | Footswitch: Program 3 | internal pull-up, active low |
 | GPIO34 | Footswitch: Program 4 | **input-only, external 10 kΩ pull-up to 3.3 V required**, active low |
-| GPIO35 | Footswitch: Program 5 | **input-only, external 10 kΩ pull-up to 3.3 V required**, active low |
+| GPIO35 | Footswitch: Program 5 (read only when `PROGRAMS_PER_BANK ≥ 5`, otherwise wired but ignored) | **input-only, external 10 kΩ pull-up to 3.3 V required**, active low |
 | GPIO36 (VP) | Footswitch: Tap Tempo | **input-only, external 10 kΩ pull-up to 3.3 V required**, active low |
 | GPIO39 (VN) | ADC1_CH3 → Expression pedal wiper | input-only; ADC source needs no pull-up |
 
@@ -103,7 +103,7 @@ Note: the Nano Cortex TRS MIDI input is Type A standard (tip = current source). 
 |--------|-------------|------------|
 | Bank Down | Decrease target bank (wraparound) | `user_function_a` (configurable MIDI message or NOOP) |
 | Bank Up | Increase target bank (wraparound) | `user_function_b` (configurable MIDI message or NOOP) |
-| Program 1–5 | Slot selection / alt toggle | (not defined yet, future hook) |
+| Program 1–N | Slot selection / alt toggle (N = `PROGRAMS_PER_BANK`, default 4) | (not defined yet, future hook) |
 | Tap Tempo | Send tap tempo CC | Send tuner toggle CC |
 
 Long press timings are globally configurable:
@@ -344,7 +344,7 @@ banks:
 ```
 
 ### Constraints
-- `PROGRAMS_PER_BANK = 5` (fixed, hardware-bound).
+- `PROGRAMS_PER_BANK` — build-time configurable via Kconfig (`CONFIG_MIDICTRL_PROGRAMS_PER_BANK`), default 4. Allowed range 2–5 in the current firmware. The pinout in section 1.2.1 still wires all five program switches; switches above `PROGRAMS_PER_BANK` are simply left unread by the firmware.
 - `MAX_BANKS` is a soft limit, 32 is recommended, depending on flash capacity.
 - MIDI message types: `PC` (Program Change, only `num`) and `CC` (Control Change, `num` + `val`). Every message has a `ch` field (1–16).
 - Bank/program names and the alt name are optional. If empty, a placeholder is used (`Bank N`, `Slot M`, `EMPTY`).
@@ -451,12 +451,12 @@ The physical board is not yet assembled, so the work splits into a pre-hardware 
 
 ### 11.1 Pre-hardware bring-up (browser-driven)
 
-1. **StateMachine** as a host-testable component. Browse mode, alt cache (ALT_A and ALT_B), slot/bank logic, expression target resolution. Validated by macOS-side unit tests with stub callbacks, before any IDF code touches it.
-2. **ConfigStore + persistence**. JSON schema from section 6 in C structs, LittleFS read/write, NVS for the small "last state" + WiFi creds, default fallback on missing/corrupt files.
-3. **WiFi + AP captive portal**. First-boot workflow, mDNS, STA fallback.
-4. **Web configurator + virtual control surface**. The 8.2 settings UI and the 8.4 virtual control surface ship together — they share the websocket and the static-asset pipeline. By the end of this step the StateMachine + ConfigStore + MidiOut-to-websocket-log path can be exercised end-to-end from a browser.
-5. **MidiOut stub**. UART transmit code is wired up but at this point also (or only) emits messages into the websocket log so the virtual surface can render them. When real MIDI hardware arrives this becomes "and also writes to UART".
-6. **LedDriver virtual path**. LED colour state computed from the StateMachine, published to the websocket; the virtual control surface renders the LEDs as coloured dots. The RMT TX path is added in 11.2 alongside the physical chain.
+1. ✅ **StateMachine** as a host-testable component. Browse mode, alt cache (ALT_A and ALT_B), slot/bank logic. Validated by macOS-side unit tests with stub callbacks. Expression target resolution and `state_machine_resync()` ride along.
+2. ✅ **ConfigStore + persistence**. JSON schema from section 6 in C structs, LittleFS read/write, default fallback on missing/corrupt files. NVS WiFi creds + last-state are layered on by 3/5.
+3. ✅ **WiFi + AP captive portal-ish**. STA-then-AP-fallback with retry, mDNS hostname `midifoot.local`, scan + save-creds endpoints exposed by the web layer. (DNS hijack for true captive-portal pop-up is deferred to polish.)
+4. ✅ **Web configurator + virtual control surface**. Three-tab browser UI (Play / Config / WiFi) over an embedded `index.html`, WebSocket carrying virtual input events to the StateMachine and broadcasting state + outgoing MIDI back, plus first-connect-wins writer / read-only visitor roles. Save → POST `/api/config` → SM `resync` → broadcast.
+5. ✅ **MidiOut stub**. SM `send_midi` callback publishes every message into the websocket log so the virtual surface can render them. When real MIDI hardware arrives this gains "and also writes to UART".
+6. ✅ **LedDriver virtual path**. LED colour state computed from the StateMachine, published to the websocket; the virtual control surface renders the LEDs as coloured dots. The RMT TX path is added in 11.2 alongside the physical chain.
 
 By the end of 11.1 the firmware does almost everything it needs to do — only the actual presentation (TFT) and physical input (footswitches/encoder/pot) are missing.
 
