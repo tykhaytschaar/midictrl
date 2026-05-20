@@ -237,6 +237,22 @@ void state_machine_dispatch(state_machine_t *sm, const sm_event_t *evt)
     }
 }
 
+void state_machine_resync(state_machine_t *sm)
+{
+    if (!sm) return;
+    if (sm->cfg->bank_count == 0) return;
+    if (sm->current_bank >= sm->cfg->bank_count) {
+        sm->current_bank = 0;
+    }
+    sm->target_bank = sm->current_bank;
+    if (sm->current_slot >= PROGRAMS_PER_BANK) {
+        sm->current_slot = 0;
+    }
+    clear_alt_cache(sm);
+    sm->browse_started_ms = 0;
+    notify_state_changed(sm);
+}
+
 void state_machine_snapshot(const state_machine_t *sm, sm_snapshot_t *out)
 {
     if (!sm || !out) {

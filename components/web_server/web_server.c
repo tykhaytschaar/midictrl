@@ -346,6 +346,13 @@ static esp_err_t config_post_handler(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "save failed");
         return ESP_FAIL;
     }
+    // Keep the StateMachine coherent with the new config (current_bank /
+    // current_slot may now be out of range) and let every connected WS
+    // client know the live config has changed so editors can re-fetch.
+    state_machine_resync(deps->sm);
+    if (s_ws) {
+        broadcast_text(s_ws, "{\"type\":\"config_changed\"}");
+    }
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, "{\"saved\":true}", HTTPD_RESP_USE_STRLEN);
 }

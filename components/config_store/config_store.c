@@ -528,13 +528,22 @@ esp_err_t config_store_from_json(config_store_t *cs, const char *json_str)
         ESP_LOGW(TAG, "config_store_from_json: parse failed");
         return ESP_ERR_INVALID_ARG;
     }
-    config_t parsed;
-    bool ok = decode_config(root, &parsed);
+    // config_t is ~24 KB once you account for MAX_BANKS * PROGRAMS_PER_BANK
+    // plus the primary+alt payloads, which blows the httpd worker's 8 KB
+    // task stack instantly. Heap-allocate the scratch copy.
+    config_t *parsed = calloc(1, sizeof(*parsed));
+    if (!parsed) {
+        cJSON_Delete(root);
+        return ESP_ERR_NO_MEM;
+    }
+    bool ok = decode_config(root, parsed);
     cJSON_Delete(root);
     if (!ok) {
         ESP_LOGW(TAG, "config_store_from_json: shape invalid");
+        free(parsed);
         return ESP_ERR_INVALID_ARG;
     }
-    cs->cfg = parsed;
+    cs->cfg = *parsed;
+    free(parsed);
     return ESP_OK;
 }

@@ -65,6 +65,12 @@ void state_machine_destroy(state_machine_t *sm);
 // Dispatch a single event. All callbacks fire synchronously before this returns.
 void state_machine_dispatch(state_machine_t *sm, const sm_event_t *evt);
 
+// Re-anchor the state to the (possibly mutated) config. Call after the
+// config changes (e.g. after a web-UI save replaces banks): clamps
+// current_bank/current_slot to valid ranges, drops browse mode, and clears
+// the alt cache. Fires state_changed once.
+void state_machine_resync(state_machine_t *sm);
+
 // Pre-computed LED state per program slot (spec sections 2.3 + 5).
 typedef enum {
     SM_SLOT_LED_INACTIVE,                // dim red, steady

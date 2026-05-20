@@ -5,79 +5,198 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>midictrl</title>
 <style>
-  body { font-family: -apple-system, system-ui, sans-serif; margin: 24px; max-width: 720px; color: #222; }
-  h1 { margin-top: 0; }
-  .role { padding: 8px 12px; border-radius: 6px; margin-bottom: 16px; font-weight: 600; }
-  .role.writer { background: #d3f5d3; color: #1d6f1d; }
-  .role.visitor { background: #fff4cf; color: #6a5500; }
-  .role.disconnected { background: #fde7e7; color: #8b1f1f; }
-  .controls { margin: 12px 0; }
-  .row { display: flex; gap: 8px; margin: 6px 0; flex-wrap: wrap; }
-  button { padding: 10px 14px; font: inherit; border: 1px solid #aaa; background: #f8f8f8; border-radius: 6px; cursor: pointer; }
-  button:active { background: #ddd; }
-  button:disabled { opacity: 0.45; cursor: not-allowed; }
-  button.fs { min-width: 64px; }
-  .slot { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; }
-  .led { width: 18px; height: 18px; border-radius: 50%; background: #222; border: 1px solid #555; }
+  :root {
+    --bg: #0f1115;
+    --panel: #1a1d23;
+    --panel2: #21252c;
+    --border: #333842;
+    --text: #e6e6e6;
+    --muted: #888c95;
+    --accent: #25c025;
+    --warn: #d8a52d;
+    --err: #d04040;
+    --blue: #1f7ae0;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px;
+         max-width: 880px; margin-left: auto; margin-right: auto;
+         background: var(--bg); color: var(--text); }
+  header { display: flex; align-items: center; gap: 16px; margin-bottom: 12px; }
+  h1 { margin: 0; font-size: 1.4em; flex: 1; }
+  h2 { margin-top: 0; font-size: 1.1em; }
+  h3 { margin-top: 16px; font-size: 0.95em; color: var(--muted); }
+  h4 { margin: 8px 0 4px; font-size: 0.85em; color: var(--muted); }
+  .role { padding: 4px 10px; border-radius: 4px; font-size: 0.85em; font-weight: 600; }
+  .role.writer { background: rgba(37,192,37,0.18); color: var(--accent); }
+  .role.visitor { background: rgba(216,165,45,0.18); color: var(--warn); }
+  .role.disconnected { background: rgba(208,64,64,0.18); color: var(--err); }
+
+  nav.tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
+  .tab { background: none; border: none; padding: 8px 16px; color: var(--muted); cursor: pointer; font: inherit;
+         border-bottom: 2px solid transparent; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+           padding: 16px; margin-bottom: 12px; }
+  .panel[hidden] { display: none !important; }
+
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+  button { padding: 8px 12px; font: inherit; border: 1px solid var(--border); background: var(--panel2); color: var(--text);
+           border-radius: 5px; cursor: pointer; }
+  button:hover:not(:disabled) { background: #2a2e36; }
+  button:active:not(:disabled) { background: #1a1d23; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #001a00; font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: #2cd02c; }
+  button.danger { color: var(--err); }
+  input, select { font: inherit; padding: 6px 8px; border: 1px solid var(--border); background: var(--panel2);
+                  color: var(--text); border-radius: 5px; }
+  input[type=number] { width: 5em; }
+  input[type=range] { padding: 0; }
+  fieldset { border: 1px solid var(--border); border-radius: 5px; padding: 8px 12px; margin: 6px 0; }
+  legend { font-size: 0.85em; color: var(--muted); padding: 0 4px; }
+
+  /* TFT preview */
+  .tft { background: #0a0b0e; border: 2px solid var(--border); border-radius: 6px; padding: 14px 18px;
+         font-family: ui-monospace, monospace; margin-bottom: 14px; }
+  .tft-bank { font-size: 0.85em; color: var(--muted); }
+  .tft-slot { font-size: 1.8em; font-weight: 700; margin: 6px 0; }
+  .tft-bot { font-size: 0.8em; color: var(--muted); display: flex; gap: 16px; }
+  .tft.browse .tft-bank::before { content: '> '; color: var(--warn); }
+
+  /* Footswitch grid */
+  .switches { display: grid; gap: 10px; }
+  .switch-row { display: flex; gap: 10px; justify-content: center; }
+  .slot-stack { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+  .led { width: 16px; height: 16px; border-radius: 50%; background: #222; border: 1px solid #444; }
   .led.inactive                  { background: #5a1414; }
-  .led.active_primary            { background: #25c025; }
-  .led.active_alt                { background: #1f7ae0; }
+  .led.active_primary            { background: #25c025; box-shadow: 0 0 8px rgba(37,192,37,0.6); }
+  .led.active_alt                { background: var(--blue); box-shadow: 0 0 8px rgba(31,122,224,0.6); }
   .led.browse_inactive           { background: #b53030; animation: blink 0.6s infinite alternate; }
-  .led.browse_active_primary     { background: #25c025; animation: blink 0.6s infinite alternate; }
-  .led.browse_active_alt         { background: #1f7ae0; animation: blink 0.6s infinite alternate; }
+  .led.browse_active_primary     { background: #25c025; animation: blink 0.6s infinite alternate; box-shadow: 0 0 8px rgba(37,192,37,0.6); }
+  .led.browse_active_alt         { background: var(--blue); animation: blink 0.6s infinite alternate; box-shadow: 0 0 8px rgba(31,122,224,0.6); }
   @keyframes blink { from { opacity: 0.3; } to { opacity: 1; } }
+  button.fs { min-width: 70px; min-height: 50px; font-weight: 600; }
+  button.fs.bank { min-width: 100px; background: #2a2e36; }
+  button.fs.tap  { background: #2a2e36; }
+  button.fs.prog.active { border-color: var(--accent); }
+
+  /* MIDI log */
+  pre#midi-log { background: var(--panel2); padding: 10px; border-radius: 5px; max-height: 200px;
+                 overflow: auto; font-size: 0.85em; margin: 0; font-family: ui-monospace, monospace; }
+
+  /* Config tab */
+  details.slot { background: var(--panel2); border: 1px solid var(--border); border-radius: 5px; margin: 4px 0; }
+  details.slot[open] { background: #232831; }
+  summary { padding: 8px 12px; cursor: pointer; display: flex; gap: 12px; align-items: baseline; }
+  summary::marker { color: var(--muted); }
+  .slot-num { font-weight: 700; min-width: 1.6em; color: var(--accent); }
+  .slot-name-disp { flex: 1; }
+  .slot-summary { color: var(--muted); font-size: 0.85em; }
+  .slot-body { padding: 8px 16px 16px; }
+  .msg-row { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
+  .msg-row select, .msg-row input { padding: 4px 6px; font-size: 0.9em; }
+  .msg-row .pc-only { display: none; }
+  .msg-row.cc .pc-only { display: inline; }
+
+  .hint { color: var(--muted); font-size: 0.85em; margin: 4px 0; }
+  .err { color: var(--err); }
+  .ok { color: var(--accent); }
   dl { display: grid; grid-template-columns: max-content 1fr; column-gap: 18px; row-gap: 4px; margin: 0; }
-  dt { font-weight: 600; }
+  dt { font-weight: 600; color: var(--muted); }
   dd { margin: 0; }
-  pre#midi-log { background: #f4f4f6; padding: 12px; border-radius: 6px; max-height: 220px; overflow: auto; font-size: 0.9em; margin: 0; }
-  .hint { color: #888; font-size: 0.85em; margin: 4px 0 14px; }
-  footer { margin-top: 32px; color: #888; font-size: 0.85em; }
+  code { font-family: ui-monospace, monospace; background: var(--panel2); padding: 1px 4px; border-radius: 3px; }
 </style>
 </head>
 <body>
-<h1>midictrl</h1>
+<header>
+  <h1>midictrl</h1>
+  <div id="role" class="role disconnected">Connecting…</div>
+</header>
 
-<div id="role" class="role disconnected">Connecting…</div>
+<nav class="tabs">
+  <button class="tab active" data-tab="play">Play</button>
+  <button class="tab" data-tab="config">Config</button>
+  <button class="tab" data-tab="wifi">WiFi</button>
+</nav>
 
-<h2>Controls</h2>
-<p class="hint">Click for short press. Shift-click for long press.</p>
+<!-- ===================== PLAY ===================== -->
+<section class="panel" id="tab-play">
+  <div class="tft" id="tft">
+    <div class="tft-bank" id="tft-bank">…</div>
+    <div class="tft-slot" id="tft-slot">…</div>
+    <div class="tft-bot">
+      <span id="tft-pos"></span>
+      <span id="tft-alt" hidden>ALT</span>
+      <span id="tft-tuner" hidden>TUNER</span>
+      <span id="tft-empty" hidden>EMPTY</span>
+    </div>
+  </div>
 
-<div class="controls">
+  <p class="hint">Click for short press, shift-click for long press.</p>
+  <div class="switches">
+    <div class="switch-row">
+      <button class="fs bank" data-fs="bank_down">BANK ↓</button>
+      <button class="fs bank" data-fs="bank_up">BANK ↑</button>
+    </div>
+    <div class="switch-row">
+      <div class="slot-stack"><button class="fs prog" data-fs="prog1">1</button><div class="led" data-led="0"></div></div>
+      <div class="slot-stack"><button class="fs prog" data-fs="prog2">2</button><div class="led" data-led="1"></div></div>
+      <div class="slot-stack"><button class="fs prog" data-fs="prog3">3</button><div class="led" data-led="2"></div></div>
+      <div class="slot-stack"><button class="fs prog" data-fs="prog4">4</button><div class="led" data-led="3"></div></div>
+      <div class="slot-stack"><button class="fs prog" data-fs="prog5">5</button><div class="led" data-led="4"></div></div>
+    </div>
+    <div class="switch-row">
+      <button class="fs tap" data-fs="tap">TAP</button>
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:14px;">
+    <label style="flex:1; display:flex; gap:8px; align-items:center;">
+      Expression: <input id="exp" type="range" min="0" max="127" value="0" style="flex:1;">
+      <span id="exp-val" style="min-width:2.5em; text-align:right;">0</span>
+    </label>
+  </div>
+
+  <h3>MIDI log</h3>
+  <pre id="midi-log"></pre>
+</section>
+
+<!-- ===================== CONFIG ===================== -->
+<section class="panel" id="tab-config" hidden>
   <div class="row">
-    <button class="fs" data-fs="bank_down">BANK ↓</button>
-    <button class="fs" data-fs="bank_up">BANK ↑</button>
+    <label>Bank: <select id="bank-select"></select></label>
+    <button id="bank-add-btn">+ Add bank</button>
+    <button id="bank-delete-btn" class="danger">Delete bank</button>
   </div>
-  <div class="row" id="slot-row">
-    <div class="slot"><button class="fs" data-fs="prog1">1</button><div class="led" data-led="0"></div></div>
-    <div class="slot"><button class="fs" data-fs="prog2">2</button><div class="led" data-led="1"></div></div>
-    <div class="slot"><button class="fs" data-fs="prog3">3</button><div class="led" data-led="2"></div></div>
-    <div class="slot"><button class="fs" data-fs="prog4">4</button><div class="led" data-led="3"></div></div>
-    <div class="slot"><button class="fs" data-fs="prog5">5</button><div class="led" data-led="4"></div></div>
-  </div>
-  <div class="row">
-    <button class="fs" data-fs="tap">TAP</button>
-  </div>
-  <div class="row">
-    <label>Expression: <input id="exp" type="range" min="0" max="127" value="0"></label>
-    <span id="exp-val">0</span>
-  </div>
-</div>
 
-<h2>State</h2>
-<dl>
-  <dt>Bank:</dt>   <dd id="bank">…</dd>
-  <dt>Target:</dt> <dd id="target">…</dd>
-  <dt>Slot:</dt>   <dd id="slot">…</dd>
-  <dt>Browse:</dt> <dd id="browse">…</dd>
-  <dt>Alt:</dt>    <dd id="alt">…</dd>
-  <dt>Tuner:</dt>  <dd id="tuner">…</dd>
-</dl>
+  <div id="bank-editor" hidden>
+    <div class="row">
+      <label style="flex:1;">Name: <input id="bank-name" type="text" maxlength="31" style="width:100%;"></label>
+    </div>
+    <fieldset>
+      <legend>Bank expression default</legend>
+      <div class="row">
+        <label><input type="checkbox" id="bank-expr-enabled"> Override (uncheck = no bank default)</label>
+        <label>CC <input id="bank-expr-cc" type="number" min="0" max="127" disabled></label>
+        <label>Ch <input id="bank-expr-ch" type="number" min="1" max="16" disabled></label>
+      </div>
+    </fieldset>
 
-<h2>MIDI log</h2>
-<pre id="midi-log"></pre>
+    <h3>Slots</h3>
+    <div id="slot-list"></div>
+  </div>
 
-<h2>WiFi</h2>
-<div id="wifi-panel">
+  <div class="row" style="margin-top:14px;">
+    <button id="config-save-btn" class="primary" disabled>Save to device</button>
+    <button id="config-revert-btn" disabled>Revert</button>
+    <span id="config-status" class="hint"></span>
+  </div>
+</section>
+
+<!-- ===================== WIFI ===================== -->
+<section class="panel" id="tab-wifi" hidden>
   <dl>
     <dt>State:</dt> <dd id="wifi-state">…</dd>
     <dt>SSID:</dt>  <dd id="wifi-ssid">…</dd>
@@ -89,76 +208,454 @@
     <select id="wifi-ssid-select" disabled><option>—</option></select>
   </div>
   <div class="row">
-    <input id="wifi-pass" type="password" placeholder="Password (empty for open networks)" autocomplete="off" style="flex:1; padding:8px; font:inherit; border:1px solid #aaa; border-radius:6px;">
-    <button id="wifi-save-btn">Save &amp; restart</button>
+    <input id="wifi-pass" type="password" placeholder="Password (empty for open networks)" autocomplete="off" style="flex:1;">
+    <button id="wifi-save-btn" class="primary">Save &amp; restart</button>
   </div>
   <p id="wifi-msg" class="hint"></p>
-</div>
-
-<footer>
-  Phase 11.1 step 4 / commit 3 — WiFi configurator. Full schematic UI + config editor in the next commit.
-</footer>
+</section>
 
 <script>
 const $ = (id) => document.getElementById(id);
-const $$ = (sel) => document.querySelectorAll(sel);
+const $$ = (sel, root=document) => root.querySelectorAll(sel);
 
-let ws = null;
-let amWriter = false;
-const log = [];
-const MAX_LOG = 80;
+// ===== Tabs ================================================================
+$$('.tab').forEach(btn => btn.addEventListener('click', () => {
+  const which = btn.dataset.tab;
+  $$('.tab').forEach(t => t.classList.toggle('active', t === btn));
+  $$('.panel').forEach(p => p.hidden = (p.id !== `tab-${which}`));
+  if (which === 'config' && !configData) loadConfig();
+}));
+
+// ===== WebSocket + role + Play state =======================================
+let ws = null, amWriter = false;
+const midiLog = []; const MAX_LOG = 80;
 
 function setRole(state, text) {
   const el = $('role');
   el.className = `role ${state}`;
   el.textContent = text;
-  // Enable/disable input controls based on writer status.
   $$('button.fs, #exp').forEach(b => { b.disabled = !amWriter; });
 }
 
 function renderState(d) {
-  $('bank').textContent   = d.current_bank;
-  $('target').textContent = d.target_bank;
-  $('slot').textContent   = d.current_slot + (d.current_slot_empty ? ' (EMPTY)' : '');
-  $('browse').textContent = d.in_browse_mode ? 'yes' : 'no';
-  $('alt').textContent    = d.current_slot_alt_active ? 'on' : 'off';
-  $('tuner').textContent  = d.tuner_on ? 'on' : 'off';
+  // TFT preview
+  const tft = $('tft');
+  tft.classList.toggle('browse', d.in_browse_mode);
+  $('tft-bank').textContent = (configData?.banks?.[d.target_bank]?.name) || `Bank ${d.target_bank + 1}`;
+  const slot = configData?.banks?.[d.current_bank]?.programs?.[d.current_slot];
+  const hasAlt = !!(slot && slot.alternative);
+  const slotLabel = (hasAlt && d.current_slot_alt_active)
+    ? (slot.alternative.name || `Slot ${d.current_slot + 1} ALT`)
+    : (slot?.name || `Slot ${d.current_slot + 1}`);
+  $('tft-slot').textContent = d.current_slot_empty ? '(empty)' : slotLabel;
+  $('tft-pos').textContent = `B${d.current_bank + 1} / P${d.current_slot + 1}`;
+  $('tft-alt').hidden = !d.current_slot_alt_active;
+  $('tft-tuner').hidden = !d.tuner_on;
+  $('tft-empty').hidden = !d.current_slot_empty;
+  // LEDs
   d.slot_leds.forEach((cls, i) => {
-    const led = document.querySelector(`[data-led="${i}"]`);
+    const led = $$(`[data-led="${i}"]`)[0];
     if (led) led.className = `led ${cls}`;
   });
+  // Mark current slot button
+  $$('button.fs.prog').forEach((b, i) => b.classList.toggle('active', i === d.current_slot));
 }
 
 function appendMidi(msg, ts) {
-  const t = msg.type === 'CC' ? `CC ${msg.num} val ${msg.val} ch ${msg.ch}` : `PC ${msg.num} ch ${msg.ch}`;
-  log.unshift(`[${(ts/1000).toFixed(2)}s] ${t}`);
-  if (log.length > MAX_LOG) log.pop();
-  $('midi-log').textContent = log.join('\n');
+  const t = msg.type === 'CC'
+    ? `CC ${msg.num} val ${msg.val} ch ${msg.ch}`
+    : `PC ${msg.num} ch ${msg.ch}`;
+  midiLog.unshift(`[${(ts/1000).toFixed(2)}s] ${t}`);
+  if (midiLog.length > MAX_LOG) midiLog.pop();
+  $('midi-log').textContent = midiLog.join('\n');
 }
 
 function connect() {
   ws = new WebSocket(`ws://${location.host}/ws`);
-  ws.onopen = () => { setRole('visitor', 'Connecting…'); };
+  ws.onopen = () => setRole('visitor', 'Connecting…');
   ws.onclose = () => {
     amWriter = false;
     setRole('disconnected', 'Disconnected — retrying in 2 s');
     setTimeout(connect, 2000);
   };
   ws.onmessage = (e) => {
-    let m;
-    try { m = JSON.parse(e.data); } catch (err) { return; }
+    let m; try { m = JSON.parse(e.data); } catch (err) { return; }
     if (m.type === 'role') {
       amWriter = m.role === 'writer';
-      setRole(m.role, amWriter ? 'Writer — your inputs are dispatched to the firmware' : 'Visitor — read only (writer will be promoted to you if the current one disconnects)');
+      setRole(m.role, amWriter ? 'Writer — your inputs are dispatched to the firmware'
+                              : 'Visitor — read-only (you get write access when the current writer disconnects)');
     } else if (m.type === 'state') {
       renderState(m.data);
     } else if (m.type === 'midi') {
       appendMidi(m.msg, m.ts);
+    } else if (m.type === 'config_changed') {
+      // Re-fetch — someone else's POST mutated the live config.
+      if (configData) loadConfig();
     }
   };
 }
 
-// --- WiFi panel ----------------------------------------------------------
+$$('[data-fs]').forEach(btn => btn.addEventListener('click', (e) => {
+  if (!amWriter || ws?.readyState !== 1) return;
+  ws.send(JSON.stringify({type: 'fs', id: btn.dataset.fs, kind: e.shiftKey ? 'long' : 'short'}));
+}));
+
+$('exp').addEventListener('input', (e) => {
+  $('exp-val').textContent = e.target.value;
+  if (!amWriter || ws?.readyState !== 1) return;
+  ws.send(JSON.stringify({type: 'exp', value: parseInt(e.target.value, 10)}));
+});
+
+// ===== Config tab ==========================================================
+let configData = null;      // live JS config object — edited in place
+let configBaseline = null;  // last known on-device JSON (for revert)
+let currentBank = 0;
+let dirty = false;
+
+function newEmptySlot() {
+  return {
+    name: '', messages: [], expression: null,
+    alternative: null,
+  };
+}
+function newEmptyBank(idx) {
+  return {
+    name: '', expression_default: null,
+    programs: [newEmptySlot(), newEmptySlot(), newEmptySlot(), newEmptySlot(), newEmptySlot()],
+  };
+}
+
+function markDirty() {
+  dirty = true;
+  $('config-save-btn').disabled = false;
+  $('config-revert-btn').disabled = false;
+  $('config-status').textContent = '';
+  // Re-render the TFT preview since names may have changed.
+  if (lastSnapshot) renderState(lastSnapshot);
+}
+
+let lastSnapshot = null;
+const origRenderState = renderState;
+renderState = function(d) { lastSnapshot = d; origRenderState(d); };
+// hack: ws.onmessage above closures the original — but we re-reference $('tft') from inside, so renaming is moot.
+// keep lastSnapshot updated for config-driven re-renders.
+
+async function loadConfig() {
+  try {
+    const r = await fetch('/api/config');
+    const j = await r.json();
+    configData = j;
+    configBaseline = JSON.stringify(j);
+    currentBank = Math.min(currentBank, Math.max(0, configData.banks.length - 1));
+    dirty = false;
+    $('config-save-btn').disabled = true;
+    $('config-revert-btn').disabled = true;
+    $('config-status').textContent = '';
+    renderConfigTab();
+    if (lastSnapshot) renderState(lastSnapshot);
+  } catch (e) {
+    $('config-status').className = 'err';
+    $('config-status').textContent = 'Load failed: ' + e;
+  }
+}
+
+function renderConfigTab() {
+  if (!configData) return;
+  const sel = $('bank-select');
+  sel.innerHTML = '';
+  configData.banks.forEach((b, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = (b.name || `Bank ${i + 1}`);
+    sel.appendChild(opt);
+  });
+  sel.value = currentBank;
+  $('bank-editor').hidden = configData.banks.length === 0;
+  $('bank-delete-btn').disabled = configData.banks.length <= 1;
+  if (configData.banks.length === 0) return;
+  const b = configData.banks[currentBank];
+  $('bank-name').value = b.name || '';
+  $('bank-expr-enabled').checked = !!b.expression_default;
+  $('bank-expr-cc').value = b.expression_default?.cc ?? 11;
+  $('bank-expr-ch').value = b.expression_default?.ch ?? 1;
+  $('bank-expr-cc').disabled = !b.expression_default;
+  $('bank-expr-ch').disabled = !b.expression_default;
+  renderSlots(b);
+}
+
+function renderSlots(bank) {
+  const list = $('slot-list');
+  list.innerHTML = '';
+  bank.programs.forEach((slot, i) => list.appendChild(renderSlot(slot, i)));
+}
+
+function renderSlot(slot, idx) {
+  const d = document.createElement('details');
+  d.className = 'slot';
+  d.dataset.idx = idx;
+
+  const sum = document.createElement('summary');
+  const summary = describeSlot(slot);
+  sum.innerHTML = `
+    <span class="slot-num">${idx + 1}</span>
+    <span class="slot-name-disp">${escapeHtml(slot.name || `(slot ${idx + 1})`)}</span>
+    <span class="slot-summary">${summary}</span>`;
+  d.appendChild(sum);
+
+  const body = document.createElement('div');
+  body.className = 'slot-body';
+  body.innerHTML = `
+    <div class="row">
+      <label style="flex:1;">Name: <input class="slot-name-input" type="text" maxlength="31" style="width:100%;"></label>
+    </div>
+    <h4>Messages</h4>
+    <div class="messages-list"></div>
+    <div class="row"><button class="msg-add-pc">+ PC</button><button class="msg-add-cc">+ CC</button></div>
+
+    <div class="row"><label><input type="checkbox" class="alt-enable"> Alternative</label></div>
+    <div class="alt-body" hidden>
+      <div class="row">
+        <label style="flex:1;">Alt name: <input class="alt-name-input" type="text" maxlength="31" style="width:100%;"></label>
+      </div>
+      <h4>Alt messages</h4>
+      <div class="alt-messages-list"></div>
+      <div class="row"><button class="alt-msg-add-pc">+ PC</button><button class="alt-msg-add-cc">+ CC</button></div>
+    </div>
+
+    <fieldset>
+      <legend>Slot expression target</legend>
+      <div class="row">
+        <label><input type="checkbox" class="slot-expr-enable"> Override bank default</label>
+        <label>CC <input class="slot-expr-cc" type="number" min="0" max="127" disabled></label>
+        <label>Ch <input class="slot-expr-ch" type="number" min="1" max="16" disabled></label>
+      </div>
+    </fieldset>`;
+
+  // Name
+  body.querySelector('.slot-name-input').value = slot.name || '';
+  body.querySelector('.slot-name-input').addEventListener('input', (e) => {
+    slot.name = e.target.value;
+    sum.querySelector('.slot-name-disp').textContent = e.target.value || `(slot ${idx + 1})`;
+    markDirty();
+  });
+
+  // Messages
+  const mlist = body.querySelector('.messages-list');
+  slot.messages.forEach((m, i) => mlist.appendChild(renderMessage(m, slot.messages, i, d)));
+  body.querySelector('.msg-add-pc').addEventListener('click', () => addMessage(slot.messages, 'PC', mlist, d));
+  body.querySelector('.msg-add-cc').addEventListener('click', () => addMessage(slot.messages, 'CC', mlist, d));
+
+  // Alt
+  const altEnable = body.querySelector('.alt-enable');
+  altEnable.checked = !!slot.alternative;
+  const altBody = body.querySelector('.alt-body');
+  altBody.hidden = !slot.alternative;
+  altEnable.addEventListener('change', (e) => {
+    if (e.target.checked) {
+      slot.alternative = slot.alternative || { name: '', messages: [], expression: null };
+    } else {
+      slot.alternative = null;
+    }
+    altBody.hidden = !e.target.checked;
+    if (e.target.checked) syncAltBody();
+    sum.querySelector('.slot-summary').textContent = describeSlot(slot);
+    markDirty();
+  });
+  function syncAltBody() {
+    if (!slot.alternative) return;
+    body.querySelector('.alt-name-input').value = slot.alternative.name || '';
+    const al = body.querySelector('.alt-messages-list');
+    al.innerHTML = '';
+    slot.alternative.messages.forEach((m, i) => al.appendChild(renderMessage(m, slot.alternative.messages, i, d)));
+  }
+  syncAltBody();
+  body.querySelector('.alt-name-input')?.addEventListener('input', (e) => {
+    if (!slot.alternative) return;
+    slot.alternative.name = e.target.value;
+    markDirty();
+  });
+  body.querySelector('.alt-msg-add-pc').addEventListener('click', () => {
+    if (!slot.alternative) return;
+    addMessage(slot.alternative.messages, 'PC', body.querySelector('.alt-messages-list'), d);
+  });
+  body.querySelector('.alt-msg-add-cc').addEventListener('click', () => {
+    if (!slot.alternative) return;
+    addMessage(slot.alternative.messages, 'CC', body.querySelector('.alt-messages-list'), d);
+  });
+
+  // Slot expression override
+  const expEnable = body.querySelector('.slot-expr-enable');
+  const expCC = body.querySelector('.slot-expr-cc');
+  const expCH = body.querySelector('.slot-expr-ch');
+  expEnable.checked = !!slot.expression;
+  expCC.value = slot.expression?.cc ?? 11;
+  expCH.value = slot.expression?.ch ?? 1;
+  expCC.disabled = !slot.expression;
+  expCH.disabled = !slot.expression;
+  expEnable.addEventListener('change', (e) => {
+    slot.expression = e.target.checked ? { cc: parseInt(expCC.value), ch: parseInt(expCH.value) } : null;
+    expCC.disabled = !e.target.checked;
+    expCH.disabled = !e.target.checked;
+    markDirty();
+  });
+  expCC.addEventListener('input', () => { if (slot.expression) slot.expression.cc = parseInt(expCC.value); markDirty(); });
+  expCH.addEventListener('input', () => { if (slot.expression) slot.expression.ch = parseInt(expCH.value); markDirty(); });
+
+  d.appendChild(body);
+  return d;
+}
+
+function describeSlot(slot) {
+  const parts = [];
+  parts.push(`${slot.messages.length} msg${slot.messages.length === 1 ? '' : 's'}`);
+  if (slot.alternative) parts.push('alt');
+  return parts.join(' · ');
+}
+
+function renderMessage(msg, parentList, listIdx, slotDetails) {
+  const r = document.createElement('div');
+  r.className = `msg-row ${msg.type === 'CC' ? 'cc' : ''}`;
+  r.innerHTML = `
+    <select class="msg-type"><option value="PC">PC</option><option value="CC">CC</option></select>
+    <label>num<input class="msg-num" type="number" min="0" max="127"></label>
+    <label class="pc-only">val<input class="msg-val" type="number" min="0" max="127"></label>
+    <label>ch<input class="msg-ch" type="number" min="1" max="16"></label>
+    <button class="msg-remove danger">×</button>`;
+  r.querySelector('.msg-type').value = msg.type;
+  r.querySelector('.msg-num').value = msg.num;
+  r.querySelector('.msg-val').value = msg.val ?? 0;
+  r.querySelector('.msg-ch').value = msg.ch;
+  r.querySelector('.msg-type').addEventListener('change', (e) => {
+    msg.type = e.target.value;
+    r.classList.toggle('cc', msg.type === 'CC');
+    if (msg.type === 'CC' && msg.val === undefined) msg.val = 0;
+    markDirty();
+  });
+  r.querySelector('.msg-num').addEventListener('input', (e) => { msg.num = parseInt(e.target.value); markDirty(); });
+  r.querySelector('.msg-val').addEventListener('input', (e) => { msg.val = parseInt(e.target.value); markDirty(); });
+  r.querySelector('.msg-ch').addEventListener('input',  (e) => { msg.ch  = parseInt(e.target.value); markDirty(); });
+  r.querySelector('.msg-remove').addEventListener('click', () => {
+    const i = parentList.indexOf(msg);
+    if (i >= 0) parentList.splice(i, 1);
+    r.remove();
+    // Re-render summary
+    const slotIdx = parseInt(slotDetails.dataset.idx);
+    const slot = configData.banks[currentBank].programs[slotIdx];
+    slotDetails.querySelector('.slot-summary').textContent = describeSlot(slot);
+    markDirty();
+  });
+  return r;
+}
+
+function addMessage(parentList, type, listEl, slotDetails) {
+  const m = type === 'CC'
+    ? { type: 'CC', num: 0, val: 0, ch: 1 }
+    : { type: 'PC', num: 0, ch: 1 };
+  parentList.push(m);
+  listEl.appendChild(renderMessage(m, parentList, parentList.length - 1, slotDetails));
+  const slotIdx = parseInt(slotDetails.dataset.idx);
+  const slot = configData.banks[currentBank].programs[slotIdx];
+  slotDetails.querySelector('.slot-summary').textContent = describeSlot(slot);
+  markDirty();
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Bank-level event handlers
+$('bank-select').addEventListener('change', (e) => {
+  currentBank = parseInt(e.target.value);
+  renderConfigTab();
+});
+$('bank-name').addEventListener('input', (e) => {
+  configData.banks[currentBank].name = e.target.value;
+  // refresh option label
+  $('bank-select').options[currentBank].textContent = e.target.value || `Bank ${currentBank + 1}`;
+  markDirty();
+});
+$('bank-expr-enabled').addEventListener('change', (e) => {
+  if (e.target.checked) {
+    configData.banks[currentBank].expression_default = {
+      cc: parseInt($('bank-expr-cc').value), ch: parseInt($('bank-expr-ch').value),
+    };
+  } else {
+    configData.banks[currentBank].expression_default = null;
+  }
+  $('bank-expr-cc').disabled = !e.target.checked;
+  $('bank-expr-ch').disabled = !e.target.checked;
+  markDirty();
+});
+$('bank-expr-cc').addEventListener('input', () => {
+  if (configData.banks[currentBank].expression_default) {
+    configData.banks[currentBank].expression_default.cc = parseInt($('bank-expr-cc').value);
+    markDirty();
+  }
+});
+$('bank-expr-ch').addEventListener('input', () => {
+  if (configData.banks[currentBank].expression_default) {
+    configData.banks[currentBank].expression_default.ch = parseInt($('bank-expr-ch').value);
+    markDirty();
+  }
+});
+
+$('bank-add-btn').addEventListener('click', () => {
+  if (configData.banks.length >= 32) return;
+  configData.banks.push(newEmptyBank(configData.banks.length));
+  currentBank = configData.banks.length - 1;
+  renderConfigTab();
+  markDirty();
+});
+$('bank-delete-btn').addEventListener('click', () => {
+  if (configData.banks.length <= 1) return;
+  if (!confirm(`Delete "${configData.banks[currentBank].name || 'this bank'}"?`)) return;
+  configData.banks.splice(currentBank, 1);
+  currentBank = Math.min(currentBank, configData.banks.length - 1);
+  renderConfigTab();
+  markDirty();
+});
+
+$('config-revert-btn').addEventListener('click', () => {
+  if (!configBaseline) return;
+  configData = JSON.parse(configBaseline);
+  dirty = false;
+  $('config-save-btn').disabled = true;
+  $('config-revert-btn').disabled = true;
+  $('config-status').textContent = '';
+  renderConfigTab();
+});
+
+$('config-save-btn').addEventListener('click', async () => {
+  if (!configData) return;
+  $('config-save-btn').disabled = true;
+  $('config-status').className = 'hint';
+  $('config-status').textContent = 'Saving…';
+  try {
+    // Normalise: pad each bank's programs to exactly 5 slots (the backend
+    // is strict about this — programs missing the trailing empties get
+    // a partially-empty bank in flash).
+    const payload = JSON.parse(JSON.stringify(configData));
+    payload.banks.forEach(b => {
+      while (b.programs.length < 5) b.programs.push(newEmptySlot());
+      b.programs.length = 5;
+    });
+    const r = await fetch('/api/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    $('config-status').className = 'ok';
+    $('config-status').textContent = 'Saved';
+    await loadConfig();
+  } catch (e) {
+    $('config-status').className = 'err';
+    $('config-status').textContent = 'Save failed: ' + e;
+    $('config-save-btn').disabled = false;
+  }
+});
+
+// ===== WiFi tab ============================================================
 async function refreshWifiStatus() {
   try {
     const s = await (await fetch('/api/status')).json();
@@ -167,7 +664,6 @@ async function refreshWifiStatus() {
     $('wifi-ip').textContent    = s.wifi.ip   || '(n/a)';
   } catch (e) { /* server may be restarting */ }
 }
-
 $('wifi-scan-btn').addEventListener('click', async () => {
   const btn = $('wifi-scan-btn');
   btn.disabled = true; btn.textContent = 'Scanning…';
@@ -180,14 +676,12 @@ $('wifi-scan-btn').addEventListener('click', async () => {
       sel.innerHTML = '<option>(no networks found)</option>';
       sel.disabled = true;
     } else {
-      j.networks
-        .sort((a,b) => b.rssi - a.rssi)
-        .forEach(n => {
-          const opt = document.createElement('option');
-          opt.value = n.ssid;
-          opt.textContent = `${n.ssid}  (${n.rssi} dBm${n.needs_password ? ', 🔒' : ''})`;
-          sel.appendChild(opt);
-        });
+      j.networks.sort((a, b) => b.rssi - a.rssi).forEach(n => {
+        const opt = document.createElement('option');
+        opt.value = n.ssid;
+        opt.textContent = `${n.ssid}  (${n.rssi} dBm${n.needs_password ? ', 🔒' : ''})`;
+        sel.appendChild(opt);
+      });
       sel.disabled = false;
     }
   } catch (e) {
@@ -196,7 +690,6 @@ $('wifi-scan-btn').addEventListener('click', async () => {
     btn.disabled = false; btn.textContent = 'Scan';
   }
 });
-
 $('wifi-save-btn').addEventListener('click', async () => {
   const ssid = $('wifi-ssid-select').value;
   const pass = $('wifi-pass').value;
@@ -208,12 +701,11 @@ $('wifi-save-btn').addEventListener('click', async () => {
   $('wifi-save-btn').disabled = true;
   try {
     const r = await fetch('/api/wifi/sta', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ssid, pass}),
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
-    $('wifi-msg').textContent = `Saved. Device is restarting — reconnect to your normal WiFi, then visit http://midifoot.local`;
+    $('wifi-msg').textContent = 'Saved. Device is restarting — reconnect to your normal WiFi, then visit http://midifoot.local';
   } catch (e) {
     $('wifi-msg').textContent = 'Save failed: ' + e;
     $('wifi-save-btn').disabled = false;
@@ -221,21 +713,6 @@ $('wifi-save-btn').addEventListener('click', async () => {
 });
 
 refreshWifiStatus();
-
-document.querySelectorAll('[data-fs]').forEach(btn => {
-  btn.addEventListener('click', (e) => {
-    if (!amWriter || !ws || ws.readyState !== 1) return;
-    ws.send(JSON.stringify({type: 'fs', id: btn.dataset.fs, kind: e.shiftKey ? 'long' : 'short'}));
-  });
-});
-
-const exp = $('exp');
-exp.addEventListener('input', (e) => {
-  $('exp-val').textContent = e.target.value;
-  if (!amWriter || !ws || ws.readyState !== 1) return;
-  ws.send(JSON.stringify({type: 'exp', value: parseInt(e.target.value, 10)}));
-});
-
 connect();
 </script>
 </body>
