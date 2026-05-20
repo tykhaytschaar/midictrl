@@ -11,6 +11,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 static const char *TAG = "web_server";
 
@@ -107,6 +108,39 @@ static void broadcast_text(web_server_t *ws, const char *text)
         }
     }
     xSemaphoreGive(ws->clients_mutex);
+    if (promoted_fd >= 0) {
+        ESP_LOGI(TAG, "WS client %d promoted to writer", promoted_fd);
+        send_role(ws, promoted_fd, true);
+    }
+}
+
+// Remove a client by sockfd, promoting the next active visitor to writer
+// if the departing one held that role. Safe to call on an already-removed
+// client (no-op via find_slot).
+static void unregister_client(web_server_t *ws, int sockfd)
+{
+    bool was_writer = false;
+    bool found = false;
+    int promoted_fd = -1;
+    xSemaphoreTake(ws->clients_mutex, portMAX_DELAY);
+    int slot = find_slot(ws, sockfd);
+    if (slot >= 0) {
+        found = true;
+        was_writer = ws->clients[slot].is_writer;
+        ws->clients[slot].active = false;
+        ws->clients[slot].is_writer = false;
+    }
+    if (was_writer) {
+        for (int i = 0; i < MAX_WS_CLIENTS; i++) {
+            if (ws->clients[i].active) {
+                ws->clients[i].is_writer = true;
+                promoted_fd = ws->clients[i].sockfd;
+                break;
+            }
+        }
+    }
+    xSemaphoreGive(ws->clients_mutex);
+    if (found) ESP_LOGI(TAG, "WS client %d disconnected", sockfd);
     if (promoted_fd >= 0) {
         ESP_LOGI(TAG, "WS client %d promoted to writer", promoted_fd);
         send_role(ws, promoted_fd, true);
@@ -264,8 +298,28 @@ static void deferred_restart_task(void *arg)
 {
     (void)arg;
     vTaskDelay(pdMS_TO_TICKS(1500));
+    // Stop the HTTP server first so all open sockets get a clean FIN
+    // before the chip resets. Without this, the browser's WS sits on a
+    // half-open connection until its own keepalive times out — and the
+    // device's stale slot in s_clients survives the reboot from the
+    // browser's perspective until a power cycle.
+    if (s_ws && s_ws->handle) {
+        ESP_LOGI(TAG, "stopping HTTP server cleanly before restart");
+        httpd_stop(s_ws->handle);
+        s_ws->handle = NULL;
+    }
     ESP_LOGI(TAG, "restarting to apply new WiFi credentials");
     esp_restart();
+}
+
+// httpd's per-session close callback. Called for every socket close —
+// graceful (browser left), abrupt (network gone), or forced (httpd_stop).
+// Default behaviour is just close(2), which we still need to do.
+static void on_session_close(httpd_handle_t hd, int sockfd)
+{
+    (void)hd;
+    if (s_ws) unregister_client(s_ws, sockfd);
+    close(sockfd);
 }
 
 static esp_err_t wifi_sta_post_handler(httpd_req_t *req)
@@ -472,6 +526,7 @@ web_server_t *web_server_start(const web_server_deps_t *deps)
     conf.max_uri_handlers = 8;
     conf.stack_size = 8192;
     conf.lru_purge_enable = true;
+    conf.close_fn = on_session_close;
 
     if (httpd_start(&ws->handle, &conf) != ESP_OK) {
         ESP_LOGE(TAG, "httpd_start failed");
