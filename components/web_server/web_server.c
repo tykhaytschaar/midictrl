@@ -3,6 +3,9 @@
 #include "cJSON.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -12,15 +15,136 @@ static const char *TAG = "web_server";
 extern const uint8_t index_html_start[] asm("_binary_index_html_start");
 extern const uint8_t index_html_end[]   asm("_binary_index_html_end");
 
+#define MAX_WS_CLIENTS 4
+
+typedef struct {
+    int sockfd;
+    bool is_writer;
+    bool active;
+} ws_client_t;
+
 struct web_server {
     httpd_handle_t handle;
     web_server_deps_t deps;
+    ws_client_t clients[MAX_WS_CLIENTS];
+    SemaphoreHandle_t clients_mutex;
 };
 
-// Single global for handler -> deps wiring. esp_http_server lets us stash
-// a `user_ctx` per URI handler, which we use; the global is only here for
-// the destroy path.
+// One server instance per app. Stored here so SM callbacks can broadcast
+// without needing the pointer threaded through every layer.
 static web_server_t *s_ws = NULL;
+
+// ===== WS client tracking ===================================================
+
+static int find_slot(web_server_t *ws, int sockfd)
+{
+    for (int i = 0; i < MAX_WS_CLIENTS; i++) {
+        if (ws->clients[i].active && ws->clients[i].sockfd == sockfd) return i;
+    }
+    return -1;
+}
+
+static int find_free_slot(web_server_t *ws)
+{
+    for (int i = 0; i < MAX_WS_CLIENTS; i++) {
+        if (!ws->clients[i].active) return i;
+    }
+    return -1;
+}
+
+static bool any_writer(web_server_t *ws)
+{
+    for (int i = 0; i < MAX_WS_CLIENTS; i++) {
+        if (ws->clients[i].active && ws->clients[i].is_writer) return true;
+    }
+    return false;
+}
+
+static esp_err_t send_text_to(web_server_t *ws, int sockfd, const char *text)
+{
+    httpd_ws_frame_t f = {
+        .type    = HTTPD_WS_TYPE_TEXT,
+        .payload = (uint8_t *)text,
+        .len     = strlen(text),
+    };
+    return httpd_ws_send_frame_async(ws->handle, sockfd, &f);
+}
+
+static void send_role(web_server_t *ws, int sockfd, bool writer)
+{
+    const char *msg = writer
+        ? "{\"type\":\"role\",\"role\":\"writer\"}"
+        : "{\"type\":\"role\",\"role\":\"visitor\"}";
+    send_text_to(ws, sockfd, msg);
+}
+
+static void broadcast_text(web_server_t *ws, const char *text)
+{
+    int dead[MAX_WS_CLIENTS];
+    int n_dead = 0;
+    xSemaphoreTake(ws->clients_mutex, portMAX_DELAY);
+    for (int i = 0; i < MAX_WS_CLIENTS; i++) {
+        if (!ws->clients[i].active) continue;
+        if (send_text_to(ws, ws->clients[i].sockfd, text) != ESP_OK) {
+            dead[n_dead++] = i;
+        }
+    }
+    for (int i = 0; i < n_dead; i++) {
+        ws->clients[dead[i]].active = false;
+    }
+    // If a writer dropped, promote the lowest-index active client.
+    bool need_promote = !any_writer(ws);
+    int promoted_fd = -1;
+    if (need_promote) {
+        for (int i = 0; i < MAX_WS_CLIENTS; i++) {
+            if (ws->clients[i].active) {
+                ws->clients[i].is_writer = true;
+                promoted_fd = ws->clients[i].sockfd;
+                break;
+            }
+        }
+    }
+    xSemaphoreGive(ws->clients_mutex);
+    if (promoted_fd >= 0) {
+        ESP_LOGI(TAG, "WS client %d promoted to writer", promoted_fd);
+        send_role(ws, promoted_fd, true);
+    }
+}
+
+static void register_client(web_server_t *ws, int sockfd)
+{
+    bool became_writer = false;
+    bool registered = false;
+    xSemaphoreTake(ws->clients_mutex, portMAX_DELAY);
+    if (find_slot(ws, sockfd) < 0) {
+        int slot = find_free_slot(ws);
+        if (slot >= 0) {
+            bool make_writer = !any_writer(ws);
+            ws->clients[slot] = (ws_client_t){.sockfd = sockfd, .is_writer = make_writer, .active = true};
+            became_writer = make_writer;
+            registered = true;
+        }
+    }
+    xSemaphoreGive(ws->clients_mutex);
+    if (!registered) {
+        ESP_LOGW(TAG, "WS client %d rejected — %d slots full", sockfd, MAX_WS_CLIENTS);
+        return;
+    }
+    ESP_LOGI(TAG, "WS client %d registered as %s", sockfd, became_writer ? "writer" : "visitor");
+    send_role(ws, sockfd, became_writer);
+    // Push an initial state snapshot so the new client renders immediately.
+    web_server_broadcast_state(ws);
+}
+
+static bool is_writer(web_server_t *ws, int sockfd)
+{
+    bool w = false;
+    xSemaphoreTake(ws->clients_mutex, portMAX_DELAY);
+    int slot = find_slot(ws, sockfd);
+    if (slot >= 0) w = ws->clients[slot].is_writer;
+    xSemaphoreGive(ws->clients_mutex);
+    return w;
+}
 
 // ===== Handlers ============================================================
 
@@ -132,6 +256,101 @@ static esp_err_t config_post_handler(httpd_req_t *req)
     return httpd_resp_send(req, "{\"saved\":true}", HTTPD_RESP_USE_STRLEN);
 }
 
+// ===== WebSocket handler ===================================================
+
+static struct {
+    const char *id;
+    sm_footswitch_t fs;
+} FS_TABLE[] = {
+    {"bank_down", SM_FS_BANK_DOWN},
+    {"bank_up",   SM_FS_BANK_UP},
+    {"prog1",     SM_FS_PROG_1},
+    {"prog2",     SM_FS_PROG_2},
+    {"prog3",     SM_FS_PROG_3},
+    {"prog4",     SM_FS_PROG_4},
+    {"prog5",     SM_FS_PROG_5},
+    {"tap",       SM_FS_TAP},
+};
+
+static bool footswitch_id_to_enum(const char *id, sm_footswitch_t *out)
+{
+    for (size_t i = 0; i < sizeof(FS_TABLE) / sizeof(FS_TABLE[0]); i++) {
+        if (strcmp(id, FS_TABLE[i].id) == 0) {
+            *out = FS_TABLE[i].fs;
+            return true;
+        }
+    }
+    return false;
+}
+
+static void handle_input_event(web_server_t *ws, const cJSON *evt)
+{
+    const cJSON *type = cJSON_GetObjectItemCaseSensitive(evt, "type");
+    if (!cJSON_IsString(type)) return;
+
+    if (strcmp(type->valuestring, "fs") == 0) {
+        const cJSON *id = cJSON_GetObjectItemCaseSensitive(evt, "id");
+        const cJSON *kind = cJSON_GetObjectItemCaseSensitive(evt, "kind");
+        if (!cJSON_IsString(id) || !cJSON_IsString(kind)) return;
+        sm_footswitch_t fs;
+        if (!footswitch_id_to_enum(id->valuestring, &fs)) return;
+        sm_event_t e = { .type = SM_EVT_FOOTSWITCH };
+        e.footswitch.fs = fs;
+        e.footswitch.press = (strcmp(kind->valuestring, "long") == 0) ? SM_PRESS_LONG : SM_PRESS_SHORT;
+        state_machine_dispatch(ws->deps.sm, &e);
+    } else if (strcmp(type->valuestring, "exp") == 0) {
+        const cJSON *value = cJSON_GetObjectItemCaseSensitive(evt, "value");
+        if (!cJSON_IsNumber(value)) return;
+        sm_event_t e = { .type = SM_EVT_EXPRESSION };
+        e.expression.value = (uint8_t)value->valueint;
+        state_machine_dispatch(ws->deps.sm, &e);
+    }
+    // Encoder events arrive when the encoder is implemented.
+}
+
+static esp_err_t ws_handler(httpd_req_t *req)
+{
+    web_server_t *ws = (web_server_t *)req->user_ctx;
+
+    if (req->method == HTTP_GET) {
+        // Initial upgrade handshake.
+        register_client(ws, httpd_req_to_sockfd(req));
+        return ESP_OK;
+    }
+
+    httpd_ws_frame_t frame = {.type = HTTPD_WS_TYPE_TEXT};
+    esp_err_t err = httpd_ws_recv_frame(req, &frame, 0);
+    if (err != ESP_OK) return err;
+
+    if (frame.type != HTTPD_WS_TYPE_TEXT || frame.len == 0 || frame.len > 4096) {
+        return ESP_OK;
+    }
+
+    uint8_t *buf = calloc(1, frame.len + 1);
+    if (!buf) return ESP_ERR_NO_MEM;
+    frame.payload = buf;
+    err = httpd_ws_recv_frame(req, &frame, frame.len);
+    if (err != ESP_OK) {
+        free(buf);
+        return err;
+    }
+
+    int sockfd = httpd_req_to_sockfd(req);
+    if (!is_writer(ws, sockfd)) {
+        // Visitor — input ignored silently.
+        free(buf);
+        return ESP_OK;
+    }
+
+    cJSON *root = cJSON_Parse((const char *)buf);
+    free(buf);
+    if (root) {
+        handle_input_event(ws, root);
+        cJSON_Delete(root);
+    }
+    return ESP_OK;
+}
+
 // ===== Lifecycle ===========================================================
 
 web_server_t *web_server_start(const web_server_deps_t *deps)
@@ -141,6 +360,11 @@ web_server_t *web_server_start(const web_server_deps_t *deps)
     web_server_t *ws = calloc(1, sizeof(*ws));
     if (!ws) return NULL;
     ws->deps = *deps;
+    ws->clients_mutex = xSemaphoreCreateMutex();
+    if (!ws->clients_mutex) {
+        free(ws);
+        return NULL;
+    }
 
     httpd_config_t conf = HTTPD_DEFAULT_CONFIG();
     conf.max_uri_handlers = 8;
@@ -149,6 +373,7 @@ web_server_t *web_server_start(const web_server_deps_t *deps)
 
     if (httpd_start(&ws->handle, &conf) != ESP_OK) {
         ESP_LOGE(TAG, "httpd_start failed");
+        vSemaphoreDelete(ws->clients_mutex);
         free(ws);
         return NULL;
     }
@@ -158,11 +383,12 @@ web_server_t *web_server_start(const web_server_deps_t *deps)
         { .uri = "/api/status",  .method = HTTP_GET,  .handler = status_handler,      .user_ctx = &ws->deps },
         { .uri = "/api/config",  .method = HTTP_GET,  .handler = config_get_handler,  .user_ctx = &ws->deps },
         { .uri = "/api/config",  .method = HTTP_POST, .handler = config_post_handler, .user_ctx = &ws->deps },
+        { .uri = "/ws",          .method = HTTP_GET,  .handler = ws_handler,          .user_ctx = ws,          .is_websocket = true },
     };
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); i++) {
         httpd_register_uri_handler(ws->handle, &routes[i]);
     }
-    ESP_LOGI(TAG, "HTTP server up — GET /, /api/status, /api/config | POST /api/config");
+    ESP_LOGI(TAG, "HTTP server up — GET /, /api/status, /api/config, WS /ws");
     s_ws = ws;
     return ws;
 }
@@ -171,6 +397,71 @@ void web_server_stop(web_server_t *ws)
 {
     if (!ws) return;
     if (ws->handle) httpd_stop(ws->handle);
+    if (ws->clients_mutex) vSemaphoreDelete(ws->clients_mutex);
     if (s_ws == ws) s_ws = NULL;
     free(ws);
+}
+
+// ===== Public broadcasts ====================================================
+
+static const char *led_to_str(sm_slot_led_t led)
+{
+    switch (led) {
+    case SM_SLOT_LED_INACTIVE:                return "inactive";
+    case SM_SLOT_LED_ACTIVE_PRIMARY:          return "active_primary";
+    case SM_SLOT_LED_ACTIVE_ALT:              return "active_alt";
+    case SM_SLOT_LED_BROWSE_INACTIVE:         return "browse_inactive";
+    case SM_SLOT_LED_BROWSE_ACTIVE_PRIMARY:   return "browse_active_primary";
+    case SM_SLOT_LED_BROWSE_ACTIVE_ALT:       return "browse_active_alt";
+    default:                                  return "?";
+    }
+}
+
+void web_server_broadcast_state(web_server_t *ws)
+{
+    if (!ws || !ws->deps.sm) return;
+    sm_snapshot_t s;
+    state_machine_snapshot(ws->deps.sm, &s);
+
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "type", "state");
+    cJSON *data = cJSON_AddObjectToObject(root, "data");
+    cJSON_AddNumberToObject(data, "current_bank", s.current_bank);
+    cJSON_AddNumberToObject(data, "target_bank", s.target_bank);
+    cJSON_AddNumberToObject(data, "current_slot", s.current_slot);
+    cJSON_AddBoolToObject(data,   "in_browse_mode", s.in_browse_mode);
+    cJSON_AddBoolToObject(data,   "current_slot_alt_active", s.current_slot_alt_active);
+    cJSON_AddBoolToObject(data,   "current_slot_empty", s.current_slot_empty);
+    cJSON_AddBoolToObject(data,   "tuner_on", s.tuner_on);
+    cJSON *leds = cJSON_AddArrayToObject(data, "slot_leds");
+    for (int i = 0; i < PROGRAMS_PER_BANK; i++) {
+        cJSON_AddItemToArray(leds, cJSON_CreateString(led_to_str(s.slot_leds[i])));
+    }
+
+    char *str = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!str) return;
+    broadcast_text(ws, str);
+    cJSON_free(str);
+}
+
+void web_server_broadcast_midi(web_server_t *ws, const midi_message_t *msg)
+{
+    if (!ws || !msg) return;
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "type", "midi");
+    cJSON_AddNumberToObject(root, "ts", (double)(esp_timer_get_time() / 1000));
+    cJSON *m = cJSON_AddObjectToObject(root, "msg");
+    cJSON_AddStringToObject(m, "type", msg->type == MIDI_PC ? "PC" : "CC");
+    cJSON_AddNumberToObject(m, "num", msg->num);
+    if (msg->type == MIDI_CC) {
+        cJSON_AddNumberToObject(m, "val", msg->val);
+    }
+    cJSON_AddNumberToObject(m, "ch", msg->ch);
+
+    char *str = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!str) return;
+    broadcast_text(ws, str);
+    cJSON_free(str);
 }

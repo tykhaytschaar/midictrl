@@ -11,23 +11,21 @@
 static const char *TAG = "midictrl";
 
 static state_machine_t *g_sm = NULL;
+static web_server_t *g_web = NULL;
 
-// --- StateMachine callbacks ------------------------------------------------
-// Stub callbacks for now: log everything to the serial console. Commit 2
-// will replace these with websocket broadcasts so the virtual control
-// surface in the browser can render LED state and tail the MIDI log.
+// StateMachine callbacks forward to the web_server broadcasts so any
+// connected browser sees live MIDI emission and state changes. Also
+// logs to the serial console for debugging when no browser is connected.
 
 static void sm_send_midi_cb(const midi_message_t *msg, void *ctx)
 {
     (void)ctx;
-    ESP_LOGI(TAG, "MIDI -> %s num=%u%s ch=%u",
-             msg->type == MIDI_PC ? "PC" : "CC",
-             msg->num,
-             msg->type == MIDI_CC ? "" : "",
-             msg->ch);
     if (msg->type == MIDI_CC) {
-        ESP_LOGI(TAG, "       val=%u", msg->val);
+        ESP_LOGI(TAG, "MIDI -> CC num=%u val=%u ch=%u", msg->num, msg->val, msg->ch);
+    } else {
+        ESP_LOGI(TAG, "MIDI -> PC num=%u ch=%u", msg->num, msg->ch);
     }
+    if (g_web) web_server_broadcast_midi(g_web, msg);
 }
 
 static void sm_state_changed_cb(void *ctx)
@@ -39,6 +37,7 @@ static void sm_state_changed_cb(void *ctx)
              s.current_bank, s.target_bank, s.current_slot,
              (int)s.in_browse_mode, (int)s.current_slot_alt_active,
              (int)s.tuner_on);
+    if (g_web) web_server_broadcast_state(g_web);
 }
 
 static uint32_t sm_now_ms_cb(void *ctx)
@@ -123,8 +122,8 @@ void app_main(void)
     }
 
     web_server_deps_t deps = { .cs = cs, .sm = g_sm, .wm = wm };
-    web_server_t *web = web_server_start(&deps);
-    if (!web) {
+    g_web = web_server_start(&deps);
+    if (!g_web) {
         ESP_LOGE(TAG, "web_server_start failed");
     }
 }

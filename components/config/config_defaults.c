@@ -2,6 +2,12 @@
 
 #include <string.h>
 
+static void copy_name(char *dst, const char *src)
+{
+    strncpy(dst, src, MAX_NAME_LEN - 1);
+    dst[MAX_NAME_LEN - 1] = '\0';
+}
+
 void config_init_defaults(config_t *out)
 {
     memset(out, 0, sizeof(*out));
@@ -23,8 +29,23 @@ void config_init_defaults(config_t *out)
     out->global.expression.curve     = EXPR_CURVE_LINEAR;
     out->global.expression.smoothing = 0.2f;
 
-    // One bank, five empty slots (spec section 7.3 step 1).
-    out->bank_count = 1;
-    // The bank name stays empty — the UI substitutes a placeholder like "Bank 1"
-    // when name[0] == '\0', per spec section 6 constraints.
+    // Two banks. The first slot of bank 0 is pre-populated with a demo
+    // primary + alt so alt toggling can be exercised from the browser
+    // before the in-browser bank editor lands. Every other slot stays
+    // empty (messages.count == 0). Spec 7.3 step 1 nominally asks for one
+    // empty bank — once the editor lets users add banks themselves the
+    // defaults can shrink back.
+    out->bank_count = 2;
+
+    program_slot_t *demo = &out->banks[0].programs[0];
+    copy_name(demo->primary.name, "Demo");
+    demo->primary.messages.count = 1;
+    demo->primary.messages.msgs[0] = (midi_message_t){MIDI_PC, 10, 0, 1};
+    demo->has_alternative = true;
+    copy_name(demo->alternative.name, "Demo ALT");
+    demo->alternative.messages.count = 1;
+    demo->alternative.messages.msgs[0] = (midi_message_t){MIDI_PC, 11, 0, 1};
+
+    // The bank names stay empty — the UI substitutes a placeholder like
+    // "Bank 1" / "Bank 2" when name[0] == '\0', per spec section 6 constraints.
 }

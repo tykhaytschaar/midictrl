@@ -19,3 +19,9 @@ typedef struct {
 
 web_server_t *web_server_start(const web_server_deps_t *deps);
 void web_server_stop(web_server_t *ws);
+
+// Push helpers — call from SM callbacks (or anywhere). Both serialise
+// the payload to JSON and fan it out to every connected websocket
+// client. Safe to call from any task; dead sockets are reaped lazily.
+void web_server_broadcast_state(web_server_t *ws);
+void web_server_broadcast_midi(web_server_t *ws, const midi_message_t *msg);

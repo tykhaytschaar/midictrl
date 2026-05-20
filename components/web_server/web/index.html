@@ -5,65 +5,155 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>midictrl</title>
 <style>
-  body { font-family: -apple-system, system-ui, sans-serif; margin: 24px; max-width: 600px; color: #222; }
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 24px; max-width: 720px; color: #222; }
   h1 { margin-top: 0; }
-  dl { display: grid; grid-template-columns: max-content 1fr; column-gap: 18px; row-gap: 4px; }
+  .role { padding: 8px 12px; border-radius: 6px; margin-bottom: 16px; font-weight: 600; }
+  .role.writer { background: #d3f5d3; color: #1d6f1d; }
+  .role.visitor { background: #fff4cf; color: #6a5500; }
+  .role.disconnected { background: #fde7e7; color: #8b1f1f; }
+  .controls { margin: 12px 0; }
+  .row { display: flex; gap: 8px; margin: 6px 0; flex-wrap: wrap; }
+  button { padding: 10px 14px; font: inherit; border: 1px solid #aaa; background: #f8f8f8; border-radius: 6px; cursor: pointer; }
+  button:active { background: #ddd; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  button.fs { min-width: 64px; }
+  .slot { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; }
+  .led { width: 18px; height: 18px; border-radius: 50%; background: #222; border: 1px solid #555; }
+  .led.inactive                  { background: #5a1414; }
+  .led.active_primary            { background: #25c025; }
+  .led.active_alt                { background: #1f7ae0; }
+  .led.browse_inactive           { background: #b53030; animation: blink 0.6s infinite alternate; }
+  .led.browse_active_primary     { background: #25c025; animation: blink 0.6s infinite alternate; }
+  .led.browse_active_alt         { background: #1f7ae0; animation: blink 0.6s infinite alternate; }
+  @keyframes blink { from { opacity: 0.3; } to { opacity: 1; } }
+  dl { display: grid; grid-template-columns: max-content 1fr; column-gap: 18px; row-gap: 4px; margin: 0; }
   dt { font-weight: 600; }
   dd { margin: 0; }
-  .muted { color: #888; }
-  pre { background: #f4f4f6; padding: 12px; border-radius: 6px; max-height: 320px; overflow: auto; }
-  .err { color: #b3261e; }
+  pre#midi-log { background: #f4f4f6; padding: 12px; border-radius: 6px; max-height: 220px; overflow: auto; font-size: 0.9em; margin: 0; }
+  .hint { color: #888; font-size: 0.85em; margin: 4px 0 14px; }
   footer { margin-top: 32px; color: #888; font-size: 0.85em; }
 </style>
 </head>
 <body>
 <h1>midictrl</h1>
 
-<h2>Status</h2>
+<div id="role" class="role disconnected">Connecting…</div>
+
+<h2>Controls</h2>
+<p class="hint">Click for short press. Shift-click for long press.</p>
+
+<div class="controls">
+  <div class="row">
+    <button class="fs" data-fs="bank_down">BANK ↓</button>
+    <button class="fs" data-fs="bank_up">BANK ↑</button>
+  </div>
+  <div class="row" id="slot-row">
+    <div class="slot"><button class="fs" data-fs="prog1">1</button><div class="led" data-led="0"></div></div>
+    <div class="slot"><button class="fs" data-fs="prog2">2</button><div class="led" data-led="1"></div></div>
+    <div class="slot"><button class="fs" data-fs="prog3">3</button><div class="led" data-led="2"></div></div>
+    <div class="slot"><button class="fs" data-fs="prog4">4</button><div class="led" data-led="3"></div></div>
+    <div class="slot"><button class="fs" data-fs="prog5">5</button><div class="led" data-led="4"></div></div>
+  </div>
+  <div class="row">
+    <button class="fs" data-fs="tap">TAP</button>
+  </div>
+  <div class="row">
+    <label>Expression: <input id="exp" type="range" min="0" max="127" value="0"></label>
+    <span id="exp-val">0</span>
+  </div>
+</div>
+
+<h2>State</h2>
 <dl>
-  <dt>WiFi:</dt>     <dd id="wifi-state" class="muted">…</dd>
-  <dt>SSID:</dt>     <dd id="wifi-ssid"  class="muted">…</dd>
-  <dt>IP:</dt>       <dd id="wifi-ip"    class="muted">…</dd>
-  <dt>Bank:</dt>     <dd id="bank"       class="muted">…</dd>
-  <dt>Slot:</dt>     <dd id="slot"       class="muted">…</dd>
-  <dt>Browse:</dt>   <dd id="browse"     class="muted">…</dd>
-  <dt>Banks total:</dt> <dd id="banks-count" class="muted">…</dd>
+  <dt>Bank:</dt>   <dd id="bank">…</dd>
+  <dt>Target:</dt> <dd id="target">…</dd>
+  <dt>Slot:</dt>   <dd id="slot">…</dd>
+  <dt>Browse:</dt> <dd id="browse">…</dd>
+  <dt>Alt:</dt>    <dd id="alt">…</dd>
+  <dt>Tuner:</dt>  <dd id="tuner">…</dd>
 </dl>
 
-<p id="err" class="err" hidden></p>
-
-<h2>Config (raw)</h2>
-<pre id="config">…</pre>
+<h2>MIDI log</h2>
+<pre id="midi-log"></pre>
 
 <footer>
-  Phase 11.1 step 4 / commit 1 — REST + status page. Clickable controls in the next commit.
+  Phase 11.1 step 4 / commit 2 — WebSocket + virtual input. Full schematic UI + config editor in the next commit.
 </footer>
 
 <script>
 const $ = (id) => document.getElementById(id);
-const setErr = (msg) => { $('err').hidden = !msg; $('err').textContent = msg || ''; };
+const $$ = (sel) => document.querySelectorAll(sel);
 
-async function refresh() {
-  try {
-    const s = await (await fetch('/api/status')).json();
-    $('wifi-state').textContent  = s.wifi.state;
-    $('wifi-ssid').textContent   = s.wifi.ssid || '(n/a)';
-    $('wifi-ip').textContent     = s.wifi.ip   || '(n/a)';
-    $('bank').textContent        = `${s.sm.current_bank} (target ${s.sm.target_bank})`;
-    $('slot').textContent        = s.sm.current_slot + (s.sm.current_slot_alt_active ? ' (ALT)' : '');
-    $('browse').textContent      = s.sm.in_browse_mode ? 'yes' : 'no';
-    $('banks-count').textContent = s.bank_count;
-    setErr(null);
-  } catch (e) { setErr('status fetch failed: ' + e); }
+let ws = null;
+let amWriter = false;
+const log = [];
+const MAX_LOG = 80;
 
-  try {
-    const c = await (await fetch('/api/config')).json();
-    $('config').textContent = JSON.stringify(c, null, 2);
-  } catch (e) { setErr('config fetch failed: ' + e); }
+function setRole(state, text) {
+  const el = $('role');
+  el.className = `role ${state}`;
+  el.textContent = text;
+  // Enable/disable input controls based on writer status.
+  $$('button.fs, #exp').forEach(b => { b.disabled = !amWriter; });
 }
 
-refresh();
-setInterval(refresh, 3000);
+function renderState(d) {
+  $('bank').textContent   = d.current_bank;
+  $('target').textContent = d.target_bank;
+  $('slot').textContent   = d.current_slot + (d.current_slot_empty ? ' (EMPTY)' : '');
+  $('browse').textContent = d.in_browse_mode ? 'yes' : 'no';
+  $('alt').textContent    = d.current_slot_alt_active ? 'on' : 'off';
+  $('tuner').textContent  = d.tuner_on ? 'on' : 'off';
+  d.slot_leds.forEach((cls, i) => {
+    const led = document.querySelector(`[data-led="${i}"]`);
+    if (led) led.className = `led ${cls}`;
+  });
+}
+
+function appendMidi(msg, ts) {
+  const t = msg.type === 'CC' ? `CC ${msg.num} val ${msg.val} ch ${msg.ch}` : `PC ${msg.num} ch ${msg.ch}`;
+  log.unshift(`[${(ts/1000).toFixed(2)}s] ${t}`);
+  if (log.length > MAX_LOG) log.pop();
+  $('midi-log').textContent = log.join('\n');
+}
+
+function connect() {
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => { setRole('visitor', 'Connecting…'); };
+  ws.onclose = () => {
+    amWriter = false;
+    setRole('disconnected', 'Disconnected — retrying in 2 s');
+    setTimeout(connect, 2000);
+  };
+  ws.onmessage = (e) => {
+    let m;
+    try { m = JSON.parse(e.data); } catch (err) { return; }
+    if (m.type === 'role') {
+      amWriter = m.role === 'writer';
+      setRole(m.role, amWriter ? 'Writer — your inputs are dispatched to the firmware' : 'Visitor — read only (writer will be promoted to you if the current one disconnects)');
+    } else if (m.type === 'state') {
+      renderState(m.data);
+    } else if (m.type === 'midi') {
+      appendMidi(m.msg, m.ts);
+    }
+  };
+}
+
+document.querySelectorAll('[data-fs]').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    if (!amWriter || !ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify({type: 'fs', id: btn.dataset.fs, kind: e.shiftKey ? 'long' : 'short'}));
+  });
+});
+
+const exp = $('exp');
+exp.addEventListener('input', (e) => {
+  $('exp-val').textContent = e.target.value;
+  if (!amWriter || !ws || ws.readyState !== 1) return;
+  ws.send(JSON.stringify({type: 'exp', value: parseInt(e.target.value, 10)}));
+});
+
+connect();
 </script>
 </body>
 </html>

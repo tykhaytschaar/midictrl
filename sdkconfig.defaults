@@ -8,3 +8,6 @@ CONFIG_PARTITION_TABLE_CUSTOM=y
 
 # Slightly larger main task stack for the bring-up phase.
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# WebSocket support in esp_http_server — needed by the web_server component.
+CONFIG_HTTPD_WS_SUPPORT=y

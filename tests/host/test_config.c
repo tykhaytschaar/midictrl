@@ -8,17 +8,34 @@ int g_tests_passed = 0;
 int g_tests_failed = 0;
 bool g_current_test_failed = false;
 
-static void test_defaults_one_empty_bank(void)
+static void test_defaults_two_banks_with_demo_alt_slot(void)
 {
     config_t cfg;
     config_init_defaults(&cfg);
-    TEST_ASSERT_EQ_INT(cfg.bank_count, 1);
-    for (int i = 0; i < PROGRAMS_PER_BANK; i++) {
-        TEST_ASSERT_EQ_INT(cfg.banks[0].programs[i].primary.messages.count, 0);
-        TEST_ASSERT_FALSE(cfg.banks[0].programs[i].has_alternative);
-        TEST_ASSERT_FALSE(cfg.banks[0].programs[i].primary.expression.present);
+    TEST_ASSERT_EQ_INT(cfg.bank_count, 2);
+
+    // Bank 0 slot 0 is the demo alt slot — primary PC 10 ch 1, alt PC 11 ch 1.
+    const program_slot_t *demo = &cfg.banks[0].programs[0];
+    TEST_ASSERT_EQ_INT(demo->primary.messages.count, 1);
+    TEST_ASSERT_EQ_INT(demo->primary.messages.msgs[0].type, MIDI_PC);
+    TEST_ASSERT_EQ_INT(demo->primary.messages.msgs[0].num, 10);
+    TEST_ASSERT_EQ_INT(demo->primary.messages.msgs[0].ch, 1);
+    TEST_ASSERT_TRUE(demo->has_alternative);
+    TEST_ASSERT_EQ_INT(demo->alternative.messages.count, 1);
+    TEST_ASSERT_EQ_INT(demo->alternative.messages.msgs[0].type, MIDI_PC);
+    TEST_ASSERT_EQ_INT(demo->alternative.messages.msgs[0].num, 11);
+    TEST_ASSERT_EQ_INT(demo->alternative.messages.msgs[0].ch, 1);
+
+    // Every other slot in both banks is empty with no alt.
+    for (int b = 0; b < 2; b++) {
+        for (int i = 0; i < PROGRAMS_PER_BANK; i++) {
+            if (b == 0 && i == 0) continue;  // the demo slot above
+            TEST_ASSERT_EQ_INT(cfg.banks[b].programs[i].primary.messages.count, 0);
+            TEST_ASSERT_FALSE(cfg.banks[b].programs[i].has_alternative);
+            TEST_ASSERT_FALSE(cfg.banks[b].programs[i].primary.expression.present);
+        }
+        TEST_ASSERT_FALSE(cfg.banks[b].expression_default.present);
     }
-    TEST_ASSERT_FALSE(cfg.banks[0].expression_default.present);
 }
 
 static void test_defaults_global_values(void)
@@ -68,7 +85,7 @@ static void test_defaults_expression_calibration(void)
 
 int main(void)
 {
-    RUN_TEST(test_defaults_one_empty_bank);
+    RUN_TEST(test_defaults_two_banks_with_demo_alt_slot);
     RUN_TEST(test_defaults_global_values);
     RUN_TEST(test_defaults_tuner_and_tap_messages);
     RUN_TEST(test_defaults_user_functions_empty);
