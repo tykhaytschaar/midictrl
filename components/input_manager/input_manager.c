@@ -11,8 +11,12 @@
 static const char *TAG = "input_manager";
 
 #define INPUT_MGR_MAX_BUTTONS   16
-#define POLL_INTERVAL_MS        5
-#define DEBOUNCE_SAMPLES        4   // 4 × 5 ms = 20 ms stable before state changes
+// FreeRTOS default tick is 10 ms — anything shorter rounds to 0 in
+// pdMS_TO_TICKS and the vTaskDelay turns into a bare yield, which
+// starves IDLE0 and trips the task watchdog. Poll one tick at a time
+// and use a 2-sample debounce so the response window stays ~20 ms.
+#define POLL_INTERVAL_MS        10
+#define DEBOUNCE_SAMPLES        2
 
 typedef struct {
     input_manager_button_t cfg;

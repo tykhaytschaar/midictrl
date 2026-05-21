@@ -35,12 +35,10 @@ static void sm_send_midi_cb(const midi_message_t *msg, void *ctx)
 static void sm_state_changed_cb(void *ctx)
 {
     (void)ctx;
-    sm_snapshot_t s;
-    state_machine_snapshot(g_sm, &s);
-    ESP_LOGI(TAG, "SM bank=%u target=%u slot=%u browse=%d alt=%d tuner=%d",
-             s.current_bank, s.target_bank, s.current_slot,
-             (int)s.in_browse_mode, (int)s.current_slot_alt_active,
-             (int)s.tuner_on);
+    // Logging moved to input_to_sm so each button press shows up paired
+    // with the state delta it caused (or "no change"). Browse-mode
+    // timeouts still go through here silently — the web broadcast tells
+    // the browser; no need to spam the UART log.
     if (g_web) web_server_broadcast_state(g_web);
 }
 
@@ -60,11 +58,71 @@ static void sm_tick_task(void *arg)
     }
 }
 
+static const char *fs_name(sm_footswitch_t fs)
+{
+    switch (fs) {
+    case SM_FS_BANK_DOWN: return "BANK_DOWN";
+    case SM_FS_BANK_UP:   return "BANK_UP";
+    case SM_FS_PROG_1:    return "PROG_1";
+    case SM_FS_PROG_2:    return "PROG_2";
+    case SM_FS_PROG_3:    return "PROG_3";
+    case SM_FS_PROG_4:    return "PROG_4";
+    case SM_FS_PROG_5:    return "PROG_5";
+    case SM_FS_TAP:       return "TAP";
+    default:              return "?";
+    }
+}
+
+static bool snapshot_equal(const sm_snapshot_t *a, const sm_snapshot_t *b)
+{
+    return a->current_bank == b->current_bank
+        && a->target_bank == b->target_bank
+        && a->current_slot == b->current_slot
+        && a->in_browse_mode == b->in_browse_mode
+        && a->current_slot_alt_active == b->current_slot_alt_active
+        && a->tuner_on == b->tuner_on;
+}
+
 // Bridge for input_manager_cb_t (sm_event_t *, void *) to the SM's
-// dispatch entry point (state_machine_t *, const sm_event_t *).
+// dispatch entry point. Logs every footswitch press alongside its
+// effect on the SM snapshot: the visible-state line if it changed,
+// "no change" if not, "not in use" for program slots above
+// PROGRAMS_PER_BANK that the SM silently rejects anyway.
 static void input_to_sm(const sm_event_t *evt, void *ctx)
 {
-    state_machine_dispatch((state_machine_t *)ctx, evt);
+    state_machine_t *sm = (state_machine_t *)ctx;
+
+    if (evt->type != SM_EVT_FOOTSWITCH) {
+        state_machine_dispatch(sm, evt);
+        return;
+    }
+
+    const char *name = fs_name(evt->footswitch.fs);
+    const char *kind = (evt->footswitch.press == SM_PRESS_LONG) ? "LP" : "SP";
+
+    if (evt->footswitch.fs >= SM_FS_PROG_1 && evt->footswitch.fs <= SM_FS_PROG_5) {
+        uint8_t slot_idx = (uint8_t)(evt->footswitch.fs - SM_FS_PROG_1);
+        if (slot_idx >= PROGRAMS_PER_BANK) {
+            ESP_LOGI(TAG, "%s %s: not in use (PROGRAMS_PER_BANK=%d)",
+                     name, kind, PROGRAMS_PER_BANK);
+            return;
+        }
+    }
+
+    sm_snapshot_t before, after;
+    state_machine_snapshot(sm, &before);
+    state_machine_dispatch(sm, evt);
+    state_machine_snapshot(sm, &after);
+
+    if (snapshot_equal(&before, &after)) {
+        ESP_LOGI(TAG, "%s %s: no change", name, kind);
+    } else {
+        ESP_LOGI(TAG, "%s %s: bank=%u target=%u slot=%u browse=%d alt=%d tuner=%d",
+                 name, kind,
+                 after.current_bank, after.target_bank, after.current_slot,
+                 (int)after.in_browse_mode, (int)after.current_slot_alt_active,
+                 (int)after.tuner_on);
+    }
 }
 
 // --- WiFi state breadcrumb --------------------------------------------------
@@ -142,9 +200,9 @@ void app_main(void)
         {BOARD_FS_PROG1_GPIO,     SM_FS_PROG_1,    true,  lpl},
         {BOARD_FS_PROG2_GPIO,     SM_FS_PROG_2,    true,  lpl},
         {BOARD_FS_PROG3_GPIO,     SM_FS_PROG_3,    true,  lpl},
-        {BOARD_FS_PROG4_GPIO,     SM_FS_PROG_4,    false, lpl},  // input-only
-        {BOARD_FS_PROG5_GPIO,     SM_FS_PROG_5,    false, lpl},  // input-only
-        {BOARD_FS_TAP_GPIO,       SM_FS_TAP,       false, lps},  // input-only, tuner timing
+        {BOARD_FS_PROG4_GPIO,     SM_FS_PROG_4,    false, lpl},  // input-only, needs external 10k pull-up
+        {BOARD_FS_PROG5_GPIO,     SM_FS_PROG_5,    false, lpl},  // input-only, needs external 10k pull-up
+        {BOARD_FS_TAP_GPIO,       SM_FS_TAP,       false, lps},  // input-only, needs external 10k pull-up; tuner timing
     };
     input_manager_init(buttons,
                        sizeof(buttons) / sizeof(buttons[0]),
