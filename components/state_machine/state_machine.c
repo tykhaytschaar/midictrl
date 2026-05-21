@@ -121,11 +121,14 @@ static void handle_program_press(state_machine_t *sm, uint8_t slot_idx)
     }
 
     if (slot_idx != sm->current_slot) {
-        // Different slot within the same bank (spec 2.4 + 2.5).
-        if (sm->cfg->global.alt_toggle_behavior == ALT_TOGGLE_A) {
-            // ALT_A: new slot starts in primary, and old slot's toggle state
-            // is no longer meaningful.
-            clear_alt_cache(sm);
+        // Different slot within the same bank (spec 2.4 + 2.5). The leaving
+        // slot's alt_persistence decides whether its alt state survives the
+        // visit elsewhere: one-time clears, permanent (default) keeps.
+        const program_slot_t *leaving =
+            slot_at(sm, sm->current_bank, sm->current_slot);
+        if (leaving->has_alternative &&
+            leaving->alt_persistence == ALT_PERSIST_ONE_TIME) {
+            sm->alt_active[sm->current_slot] = false;
         }
         sm->current_slot = slot_idx;
         const program_slot_t *slot = slot_at(sm, sm->current_bank, slot_idx);

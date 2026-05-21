@@ -136,12 +136,16 @@ static bool decode_payload(const cJSON *obj, program_payload_t *out)
     return true;
 }
 
+static const char *alt_persist_to_str(alt_persist_t p);
+static alt_persist_t alt_persist_from_str(const char *s, alt_persist_t fallback);
+
 static cJSON *encode_slot(const program_slot_t *s)
 {
     cJSON *obj = encode_payload(&s->primary);
     if (!obj) return NULL;
     if (s->has_alternative) {
         cJSON_AddItemToObject(obj, "alternative", encode_payload(&s->alternative));
+        cJSON_AddStringToObject(obj, "alt_persistence", alt_persist_to_str(s->alt_persistence));
     } else {
         cJSON_AddItemToObject(obj, "alternative", cJSON_CreateNull());
     }
@@ -156,6 +160,9 @@ static bool decode_slot(const cJSON *obj, program_slot_t *out)
     if (alt && !cJSON_IsNull(alt)) {
         if (!decode_payload(alt, &out->alternative)) return false;
         out->has_alternative = true;
+        const cJSON *ap = cJSON_GetObjectItemCaseSensitive(obj, "alt_persistence");
+        out->alt_persistence = alt_persist_from_str(
+            cJSON_IsString(ap) ? ap->valuestring : NULL, ALT_PERSIST_PERMANENT);
     }
     return true;
 }
@@ -195,15 +202,15 @@ static bool decode_bank(const cJSON *obj, bank_t *out)
     return true;
 }
 
-static const char *alt_toggle_to_str(alt_toggle_behavior_t b)
+static const char *alt_persist_to_str(alt_persist_t p)
 {
-    return (b == ALT_TOGGLE_A) ? "ALT_A" : "ALT_B";
+    return (p == ALT_PERSIST_ONE_TIME) ? "one_time" : "permanent";
 }
 
-static alt_toggle_behavior_t alt_toggle_from_str(const char *s, alt_toggle_behavior_t fallback)
+static alt_persist_t alt_persist_from_str(const char *s, alt_persist_t fallback)
 {
-    if (s && strcmp(s, "ALT_A") == 0) return ALT_TOGGLE_A;
-    if (s && strcmp(s, "ALT_B") == 0) return ALT_TOGGLE_B;
+    if (s && strcmp(s, "one_time")  == 0) return ALT_PERSIST_ONE_TIME;
+    if (s && strcmp(s, "permanent") == 0) return ALT_PERSIST_PERMANENT;
     return fallback;
 }
 
@@ -238,7 +245,6 @@ static cJSON *encode_global(const global_config_t *g)
     cJSON_AddNumberToObject(obj, "long_press_short_ms", g->long_press_short_ms);
     cJSON_AddNumberToObject(obj, "long_press_long_ms",  g->long_press_long_ms);
     cJSON_AddNumberToObject(obj, "browse_timeout_ms",   g->browse_timeout_ms);
-    cJSON_AddStringToObject(obj, "alt_toggle_behavior", alt_toggle_to_str(g->alt_toggle_behavior));
     cJSON_AddBoolToObject(obj,   "boot_resume", g->boot_resume);
     cJSON_AddNumberToObject(obj, "display_brightness", g->display_brightness);
     cJSON_AddNumberToObject(obj, "led_brightness", g->led_brightness);
@@ -280,11 +286,6 @@ static void decode_global(const cJSON *obj, global_config_t *out)
     if (cJSON_IsNumber(n)) out->long_press_long_ms = (uint32_t)n->valuedouble;
     n = cJSON_GetObjectItemCaseSensitive(obj, "browse_timeout_ms");
     if (cJSON_IsNumber(n)) out->browse_timeout_ms = (uint32_t)n->valuedouble;
-
-    const cJSON *atb = cJSON_GetObjectItemCaseSensitive(obj, "alt_toggle_behavior");
-    if (cJSON_IsString(atb)) {
-        out->alt_toggle_behavior = alt_toggle_from_str(atb->valuestring, out->alt_toggle_behavior);
-    }
 
     const cJSON *br = cJSON_GetObjectItemCaseSensitive(obj, "boot_resume");
     if (cJSON_IsBool(br)) out->boot_resume = cJSON_IsTrue(br);

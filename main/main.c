@@ -171,9 +171,8 @@ void app_main(void)
         return;
     }
     const config_t *cfg = config_store_get(cs);
-    ESP_LOGI(TAG, "config: %u bank(s), midi_channel=%u, alt_toggle=%s",
-             cfg->bank_count, cfg->global.midi_channel,
-             cfg->global.alt_toggle_behavior == ALT_TOGGLE_A ? "ALT_A" : "ALT_B");
+    ESP_LOGI(TAG, "config: %u bank(s), midi_channel=%u",
+             cfg->bank_count, cfg->global.midi_channel);
 
     sm_callbacks_t sm_cb = {
         .send_midi     = sm_send_midi_cb,

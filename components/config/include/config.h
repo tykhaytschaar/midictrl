@@ -55,9 +55,15 @@ typedef struct {
     expression_target_t expression;   // .present==false means "inherit bank default"
 } program_payload_t;
 
+typedef enum {
+    ALT_PERSIST_PERMANENT = 0,  // alt state survives slot changes within the bank (default)
+    ALT_PERSIST_ONE_TIME  = 1,  // alt state reverts to primary when the slot is left
+} alt_persist_t;
+
 typedef struct {
     program_payload_t primary;        // the slot itself
     bool has_alternative;
+    alt_persist_t alt_persistence;    // only meaningful when has_alternative
     program_payload_t alternative;    // only valid when has_alternative
 } program_slot_t;
 
@@ -66,11 +72,6 @@ typedef struct {
     expression_target_t expression_default;  // .present==false means "no bank default"
     program_slot_t programs[PROGRAMS_PER_BANK];
 } bank_t;
-
-typedef enum {
-    ALT_TOGGLE_A = 0,
-    ALT_TOGGLE_B = 1,
-} alt_toggle_behavior_t;
 
 typedef enum {
     EXPR_CURVE_LINEAR = 0,
@@ -94,7 +95,6 @@ typedef struct {
     uint32_t long_press_short_ms;
     uint32_t long_press_long_ms;
     uint32_t browse_timeout_ms;            // 0 disables the timeout
-    alt_toggle_behavior_t alt_toggle_behavior;
     bool boot_resume;
     uint8_t display_brightness;            // 0–255
     uint8_t led_brightness;                // 0–255

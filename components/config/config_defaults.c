@@ -20,7 +20,6 @@ void config_init_defaults(config_t *out)
     out->global.long_press_short_ms = 500;
     out->global.long_press_long_ms  = 1500;
     out->global.browse_timeout_ms   = 10000;
-    out->global.alt_toggle_behavior = ALT_TOGGLE_B;
     out->global.boot_resume         = true;
     out->global.display_brightness  = 200;
     out->global.led_brightness      = 128;
@@ -42,6 +41,7 @@ void config_init_defaults(config_t *out)
     demo->primary.messages.count = 1;
     demo->primary.messages.msgs[0] = (midi_message_t){MIDI_PC, 10, 0, 1};
     demo->has_alternative = true;
+    demo->alt_persistence = ALT_PERSIST_PERMANENT;
     copy_name(demo->alternative.name, "Demo ALT");
     demo->alternative.messages.count = 1;
     demo->alternative.messages.msgs[0] = (midi_message_t){MIDI_PC, 11, 0, 1};

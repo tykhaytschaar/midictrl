@@ -21,6 +21,7 @@ static void test_defaults_two_banks_with_demo_alt_slot(void)
     TEST_ASSERT_EQ_INT(demo->primary.messages.msgs[0].num, 10);
     TEST_ASSERT_EQ_INT(demo->primary.messages.msgs[0].ch, 1);
     TEST_ASSERT_TRUE(demo->has_alternative);
+    TEST_ASSERT_EQ_INT(demo->alt_persistence, ALT_PERSIST_PERMANENT);
     TEST_ASSERT_EQ_INT(demo->alternative.messages.count, 1);
     TEST_ASSERT_EQ_INT(demo->alternative.messages.msgs[0].type, MIDI_PC);
     TEST_ASSERT_EQ_INT(demo->alternative.messages.msgs[0].num, 11);
@@ -43,7 +44,6 @@ static void test_defaults_global_values(void)
     config_t cfg;
     config_init_defaults(&cfg);
     TEST_ASSERT_EQ_INT(cfg.global.midi_channel, 1);
-    TEST_ASSERT_EQ_INT(cfg.global.alt_toggle_behavior, ALT_TOGGLE_B);
     TEST_ASSERT_TRUE(cfg.global.boot_resume);
     TEST_ASSERT_EQ_INT(cfg.global.long_press_short_ms, 500);
     TEST_ASSERT_EQ_INT(cfg.global.long_press_long_ms, 1500);

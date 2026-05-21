@@ -136,26 +136,36 @@ Browse mode logic:
 
 ### 2.5 Alternative program (Alt) toggle
 
-Each slot may optionally have an alt object (own name + message list + optional expression target). Toggle behavior is a global setting (`alt_toggle_behavior`):
+Each slot may optionally have an alt object (own name + message list + optional expression target). For slots that do have one, the slot also carries an `alt_persistence` setting that controls what happens to its alt state when the user navigates away from the slot and then comes back:
 
-#### ALT_A mode (simpler)
-- Only the **currently active** slot has a toggle state in memory.
-- On selecting another slot or switching banks, the toggle state is cleared, the new slot starts in primary.
-
-#### ALT_B mode (slot-level cache, within a bank)
-- Every slot's toggle state is **remembered** within the bank, in RAM.
-- When a slot is selected, it resumes from its last state (primary or alt).
+#### Permanent (default)
+- The slot's alt state is **remembered** in RAM until a bank switch (or boot).
+- Pressing the slot again while it's not current first resumes whatever state was active last time it was current.
 - Example workflow:
   ```
   Bank 1 loaded → every slot starts in primary
   Press Prog 1 → LED green (primary)
-  Press Prog 1 → LED blue (alt)        [slot 1 cache = alt]
+  Press Prog 1 → LED blue (alt)        [slot 1 cache = alt, permanent]
   Press Prog 2 → LED green (primary)
   Press Prog 1 → LED BLUE (alt)        [restored from cache]
   Press Prog 1 → LED green (primary)
   ```
-- **On bank switch** (commit), the alt cache is cleared, every slot starts in primary in the new bank.
-- The cache is not persistent — **on boot, everything starts in primary**, regardless of `alt_toggle_behavior`.
+
+#### One-time
+- The slot's alt state is **cleared the moment the user navigates to a different slot**, so the next time we come back the slot starts in primary again.
+- Example workflow (slot 1 is one-time, slot 2 has no alt):
+  ```
+  Bank 1 loaded → every slot starts in primary
+  Press Prog 1 → LED green (primary)
+  Press Prog 1 → LED blue (alt)        [slot 1 cache = alt]
+  Press Prog 2 → LED green (primary)   [leaving slot 1 → one-time clears cache]
+  Press Prog 1 → LED GREEN (primary)   [back to original]
+  ```
+
+Each slot picks its own persistence; mixing permanent slots with one-time slots in the same bank is fine. The setting only matters when the slot has `has_alternative=true`; without an alternative the press is always a no-op.
+
+- **On bank switch** (commit), the alt cache is cleared for every slot regardless of its persistence — the new bank always starts entirely in primary.
+- The cache is not persistent across reboots — **on boot, every slot starts in primary**, independent of its `alt_persistence`.
 
 If a slot has no alt configured, repeated press does nothing (no-op), the LED stays green.
 
@@ -218,7 +228,6 @@ Both messages are **global** settings, not mode/bank-level.
         │   ├── User function B
         │   ├── Long press timings
         │   ├── Browse timeout
-        │   ├── Alt toggle behavior (ALT_A / ALT_B)
         │   ├── Boot resume (on/off)
         │   ├── Display brightness
         │   └── Expression calibration
@@ -310,7 +319,6 @@ global:
   long_press_short_ms:  500
   long_press_long_ms:   1500
   browse_timeout_ms:    10000                  # 0 = disabled
-  alt_toggle_behavior:  "ALT_B"                # "ALT_A" | "ALT_B"
   boot_resume:          true
   display_brightness:   200                    # 0–255
   led_brightness:       128                    # 0–255
@@ -329,6 +337,7 @@ banks:
           - { type: PC, num: 4,  ch: 1 }
           - { type: CC, num: 20, val: 0, ch: 1 }
         expression: null                       # null = inherit bank default
+        alt_persistence: "permanent"           # "permanent" (default) | "one_time"
         alternative:                           # optional, may be missing
           name: "Clean Intro ALT"
           messages:
@@ -362,7 +371,7 @@ banks:
 The partition table (`partitions.csv`) reserves `nvs` (24 K) for preferences, `phy_init` (4 K), an app partition (~4 MB), and a `storage` partition for LittleFS (filling the rest of the flash).
 
 ### 7.2 Non-persistent (RAM only)
-- ALT_B cache (slot-level alt states).
+- Per-slot alt cache (cleared on bank switch and on reboot).
 - Target bank during browse.
 - Tap tempo BPM.
 
@@ -451,7 +460,7 @@ The physical board is not yet assembled, so the work splits into a pre-hardware 
 
 ### 11.1 Pre-hardware bring-up (browser-driven)
 
-1. ✅ **StateMachine** as a host-testable component. Browse mode, alt cache (ALT_A and ALT_B), slot/bank logic. Validated by macOS-side unit tests with stub callbacks. Expression target resolution and `state_machine_resync()` ride along.
+1. ✅ **StateMachine** as a host-testable component. Browse mode, per-slot alt cache with permanent / one-time persistence, slot/bank logic. Validated by macOS-side unit tests with stub callbacks. Expression target resolution and `state_machine_resync()` ride along.
 2. ✅ **ConfigStore + persistence**. JSON schema from section 6 in C structs, LittleFS read/write, default fallback on missing/corrupt files. NVS WiFi creds + last-state are layered on by 3/5.
 3. ✅ **WiFi + AP captive portal-ish**. STA-then-AP-fallback with retry, mDNS hostname `midifoot.local`, scan + save-creds endpoints exposed by the web layer. (DNS hijack for true captive-portal pop-up is deferred to polish.)
 4. ✅ **Web configurator + virtual control surface**. Three-tab browser UI (Play / Config / WiFi) over an embedded `index.html`, WebSocket carrying virtual input events to the StateMachine and broadcasting state + outgoing MIDI back, plus first-connect-wins writer / read-only visitor roles. Save → POST `/api/config` → SM `resync` → broadcast.

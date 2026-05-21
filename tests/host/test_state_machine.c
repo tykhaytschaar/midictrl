@@ -67,7 +67,6 @@ static void init_config(void)
     s_cfg.global.long_press_short_ms   = 500;
     s_cfg.global.long_press_long_ms    = 1500;
     s_cfg.global.browse_timeout_ms     = 10000;
-    s_cfg.global.alt_toggle_behavior   = ALT_TOGGLE_B;
     s_cfg.global.boot_resume           = true;
     s_cfg.global.display_brightness    = 200;
     s_cfg.global.led_brightness        = 128;
@@ -319,28 +318,29 @@ static void test_same_slot_no_alt_noop(void)
     state_machine_destroy(sm);
 }
 
-static void test_alt_a_clears_on_slot_change(void)
+static void test_one_time_alt_clears_on_slot_leave(void)
 {
     state_machine_t *sm = make_sm();
-    s_cfg.global.alt_toggle_behavior = ALT_TOGGLE_A;
+    s_cfg.banks[0].programs[0].alt_persistence = ALT_PERSIST_ONE_TIME;
     press_short(sm, SM_FS_PROG_1);  // toggle slot 0 to alt
-    press_short(sm, SM_FS_PROG_4);  // switch to slot 3 (also has alt)
+    press_short(sm, SM_FS_PROG_4);  // leave slot 0 → one_time clears its alt state
     sm_snapshot_t s;
     state_machine_snapshot(sm, &s);
+    TEST_ASSERT_EQ_INT(s.current_slot, 3);
     TEST_ASSERT_FALSE(s.current_slot_alt_active);  // slot 3 starts primary
-    press_short(sm, SM_FS_PROG_1);  // back to slot 0 — also primary, alt was cleared
+    press_short(sm, SM_FS_PROG_1);  // back to slot 0 — original (primary), since alt was cleared
     state_machine_snapshot(sm, &s);
     TEST_ASSERT_EQ_INT(s.current_slot, 0);
     TEST_ASSERT_FALSE(s.current_slot_alt_active);
     state_machine_destroy(sm);
 }
 
-static void test_alt_b_preserves_per_slot(void)
+static void test_permanent_alt_preserves_per_slot(void)
 {
     state_machine_t *sm = make_sm();
-    // ALT_B is the fixture default.
+    // Permanent is the fixture default (zero-init = ALT_PERSIST_PERMANENT).
     press_short(sm, SM_FS_PROG_1);  // toggle slot 0 to alt
-    press_short(sm, SM_FS_PROG_4);  // switch to slot 3 — should start primary
+    press_short(sm, SM_FS_PROG_4);  // leave slot 0 → permanent keeps its alt state
     sm_snapshot_t s;
     state_machine_snapshot(sm, &s);
     TEST_ASSERT_EQ_INT(s.current_slot, 3);
@@ -348,6 +348,30 @@ static void test_alt_b_preserves_per_slot(void)
     press_short(sm, SM_FS_PROG_1);  // back to slot 0 — alt should be restored
     state_machine_snapshot(sm, &s);
     TEST_ASSERT_EQ_INT(s.current_slot, 0);
+    TEST_ASSERT_TRUE(s.current_slot_alt_active);
+    state_machine_destroy(sm);
+}
+
+// Two slots in the same bank with different persistence settings; each respects its own.
+static void test_mixed_persistence_per_slot(void)
+{
+    state_machine_t *sm = make_sm();
+    s_cfg.banks[0].programs[0].alt_persistence = ALT_PERSIST_ONE_TIME;
+    s_cfg.banks[0].programs[3].alt_persistence = ALT_PERSIST_PERMANENT;
+
+    press_short(sm, SM_FS_PROG_1);  // slot 0 → alt
+    press_short(sm, SM_FS_PROG_4);  // leave slot 0 (one_time → cleared); slot 3 = primary
+    press_short(sm, SM_FS_PROG_4);  // slot 3 → alt
+    press_short(sm, SM_FS_PROG_1);  // leave slot 3 (permanent → kept); slot 0 = primary (was cleared)
+
+    sm_snapshot_t s;
+    state_machine_snapshot(sm, &s);
+    TEST_ASSERT_EQ_INT(s.current_slot, 0);
+    TEST_ASSERT_FALSE(s.current_slot_alt_active);  // slot 0 stayed primary
+
+    press_short(sm, SM_FS_PROG_4);  // return to slot 3 — alt should be restored
+    state_machine_snapshot(sm, &s);
+    TEST_ASSERT_EQ_INT(s.current_slot, 3);
     TEST_ASSERT_TRUE(s.current_slot_alt_active);
     state_machine_destroy(sm);
 }
@@ -485,8 +509,9 @@ int main(void)
     RUN_TEST(test_same_slot_alt_toggle);
     RUN_TEST(test_different_slot_select);
     RUN_TEST(test_same_slot_no_alt_noop);
-    RUN_TEST(test_alt_a_clears_on_slot_change);
-    RUN_TEST(test_alt_b_preserves_per_slot);
+    RUN_TEST(test_one_time_alt_clears_on_slot_leave);
+    RUN_TEST(test_permanent_alt_preserves_per_slot);
+    RUN_TEST(test_mixed_persistence_per_slot);
     RUN_TEST(test_bank_commit_clears_alt);
     RUN_TEST(test_tap_short_emits_tap_message);
     RUN_TEST(test_tap_long_toggles_tuner);

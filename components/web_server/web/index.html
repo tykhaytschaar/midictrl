@@ -97,10 +97,14 @@
   .slot-body { padding: 8px 16px 16px; }
   .slot-section { padding-top: 12px; margin-top: 12px; border-top: 1px solid var(--border); }
   .slot-section:first-child { padding-top: 0; margin-top: 0; border-top: 0; }
-  .msg-row { display: flex; gap: 6px; align-items: center; margin: 4px 0; }
+  .msg-row { display: flex; gap: 10px; align-items: center; margin: 4px 0; }
   .msg-row select, .msg-row input { padding: 4px 6px; font-size: 0.9em; }
-  .msg-row .pc-only { display: none; }
-  .msg-row.cc .pc-only { display: inline; }
+  .msg-row label { display: inline-flex; gap: 8px; align-items: center; }
+  .msg-row .msg-type { width: 64px; }
+  .msg-row .msg-ch, .msg-row .msg-num, .msg-row .msg-val { width: 62px; }
+  .msg-row .pc-only { visibility: hidden; }  /* hide val but reserve the column */
+  .msg-row.cc .pc-only { visibility: visible; }
+  .msg-row .msg-up { margin-left: auto; }    /* pushes the action buttons to the right edge */
   .icon-btn { min-width: 36px; padding: 6px 10px; }
   .field { display: block; margin-bottom: 10px; }
   .field > label { display: block; font-size: 0.9em; color: var(--muted); margin-bottom: 4px; }
@@ -223,13 +227,6 @@
         <div class="field-row">
           <label>Browse timeout (ms, 0 = disabled)</label>
           <input id="g-bt" type="number" min="0" max="60000">
-        </div>
-        <div class="field-row">
-          <label>Alt toggle behaviour</label>
-          <select id="g-atb">
-            <option value="ALT_A">ALT_A — current slot only</option>
-            <option value="ALT_B">ALT_B — per-slot cache within bank</option>
-          </select>
         </div>
         <div class="field-row">
           <label><input id="g-boot-resume" type="checkbox"> Resume last bank/slot on boot</label>
@@ -557,6 +554,11 @@ function renderSlot(slot, idx) {
           <label>Alt name</label>
           <input class="alt-name-input" type="text" maxlength="31">
         </div>
+        <div class="field-row" title="Permanent: alt state survives leaving the slot. One-time: revert to primary when leaving.">
+          <label>When leaving this slot</label>
+          <label><input type="radio" class="alt-persist" value="permanent"> Permanent</label>
+          <label><input type="radio" class="alt-persist" value="one_time"> One-time</label>
+        </div>
         <h4>Alt messages</h4>
         <div class="alt-messages-list"></div>
         <div class="row"><button class="alt-msg-add icon-btn" title="Add alt message">+</button></div>
@@ -595,6 +597,7 @@ function renderSlot(slot, idx) {
   altEnable.addEventListener('change', (e) => {
     if (e.target.checked) {
       slot.alternative = slot.alternative || { name: '', messages: [], expression: null };
+      if (!slot.alt_persistence) slot.alt_persistence = 'permanent';
     } else {
       slot.alternative = null;
     }
@@ -602,6 +605,20 @@ function renderSlot(slot, idx) {
     if (e.target.checked) syncAltBody();
     refreshSlotSummary(sum, slot, idx);
     markDirty();
+  });
+
+  // Per-slot alt persistence radio.
+  const persistRadios = body.querySelectorAll('.alt-persist');
+  const persistValue = slot.alt_persistence || 'permanent';
+  persistRadios.forEach(r => {
+    r.checked = (r.value === persistValue);
+    r.name = `alt-persist-${idx}`;
+    r.addEventListener('change', (e) => {
+      if (e.target.checked) {
+        slot.alt_persistence = e.target.value;
+        markDirty();
+      }
+    });
   });
   function syncAltBody() {
     if (!slot.alternative) return;
@@ -674,12 +691,15 @@ function renderMessage(msg, parentList, listEl, slotDetails) {
   r.className = `msg-row ${msg.type === 'CC' ? 'cc' : ''}`;
   r.innerHTML = `
     <select class="msg-type"><option value="PC">PC</option><option value="CC">CC</option></select>
-    <label>num<input class="msg-num" type="number" min="0" max="127"></label>
-    <label class="pc-only">val<input class="msg-val" type="number" min="0" max="127"></label>
     <label>ch<input class="msg-ch" type="number" min="1" max="16"></label>
+    <label>num<input class="msg-num" type="number" min="0" max="127"></label>
+    <label class="pc-only">value<input class="msg-val" type="number" min="0" max="127"></label>
     <button class="msg-up" title="Move up">↑</button>
     <button class="msg-down" title="Move down">↓</button>
     <button class="msg-remove danger" title="Remove">×</button>`;
+  const idx = parentList.indexOf(msg);
+  r.querySelector('.msg-up').disabled = (idx <= 0);
+  r.querySelector('.msg-down').disabled = (idx < 0 || idx >= parentList.length - 1);
   r.querySelector('.msg-type').value = msg.type;
   r.querySelector('.msg-num').value = msg.num;
   r.querySelector('.msg-val').value = msg.val ?? 0;
@@ -732,9 +752,9 @@ function escapeHtml(s) {
 function renderSingleMessage(container, msg) {
   container.innerHTML = `
     <select class="msg-type"><option value="PC">PC</option><option value="CC">CC</option></select>
+    <label>ch<input class="msg-ch" type="number" min="1" max="16"></label>
     <label>num<input class="msg-num" type="number" min="0" max="127"></label>
-    <label class="pc-only">val<input class="msg-val" type="number" min="0" max="127"></label>
-    <label>ch<input class="msg-ch" type="number" min="1" max="16"></label>`;
+    <label class="pc-only">value<input class="msg-val" type="number" min="0" max="127"></label>`;
   container.classList.toggle('cc', msg.type === 'CC');
   container.querySelector('.msg-type').value = msg.type;
   container.querySelector('.msg-num').value  = msg.num;
@@ -775,7 +795,6 @@ function renderGlobalSettings() {
   $('g-lps').value = g.long_press_short_ms;
   $('g-lpl').value = g.long_press_long_ms;
   $('g-bt').value  = g.browse_timeout_ms;
-  $('g-atb').value = g.alt_toggle_behavior;
   $('g-boot-resume').checked = !!g.boot_resume;
   $('g-disp-br').value = g.display_brightness;
   $('g-disp-br-val').textContent = g.display_brightness;
@@ -802,7 +821,6 @@ function bindGlobalInputs() {
   numIn('g-adc-min',      v => configData.global.expression.adc_min = v);
   numIn('g-adc-max',      v => configData.global.expression.adc_max = v);
 
-  $('g-atb').addEventListener('change', e => { configData.global.alt_toggle_behavior = e.target.value; markDirty(); });
   $('g-boot-resume').addEventListener('change', e => { configData.global.boot_resume = e.target.checked; markDirty(); });
   $('g-curve').addEventListener('change', e => { configData.global.expression.curve = e.target.value; markDirty(); });
   $('g-smooth').addEventListener('input', e => {
